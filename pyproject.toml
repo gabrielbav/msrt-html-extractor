@@ -1,0 +1,98 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "microstrategy-extractor"
+version = "2.0.0"
+description = "MicroStrategy HTML Documentation Parser and Data Model Extractor"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "MicroStrategy Extractor Team"}
+]
+keywords = ["microstrategy", "html", "parser", "extractor", "data-model"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "beautifulsoup4>=4.12.0",
+    "lxml>=4.9.0",
+    "pyyaml>=6.0.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "mypy>=1.0.0",
+    "ruff>=0.1.0",
+]
+db = [
+    "psycopg2-binary>=2.9.0",  # PostgreSQL
+]
+
+[project.scripts]
+mstr-extract = "microstrategy_extractor.cli:main"
+mstr-validate = "microstrategy_extractor.cli:validate"
+mstr-export = "microstrategy_extractor.cli:export"
+
+[project.urls]
+Homepage = "https://github.com/your-org/microstrategy-extractor"
+Documentation = "https://github.com/your-org/microstrategy-extractor/tree/main/docs"
+Repository = "https://github.com/your-org/microstrategy-extractor"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["microstrategy_extractor*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=microstrategy_extractor --cov-report=html --cov-report=term"
+
+[tool.coverage.run]
+source = ["src/microstrategy_extractor"]
+omit = ["*/tests/*", "*/legacy/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+

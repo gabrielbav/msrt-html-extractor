@@ -5,8 +5,13 @@ import logging
 import sys
 from pathlib import Path
 
-from extractor import ReportExtractor
-from output import export_to_json, export_to_csv, print_summary
+# Using legacy modules for backward compatibility
+# For new code, use: from microstrategy_extractor.extractors import ReportExtractor
+import sys
+sys.path.insert(0, 'src')
+
+from microstrategy_extractor.legacy.extractor import ReportExtractor
+from microstrategy_extractor.legacy.output import export_to_json, export_to_csv, print_summary
 
 
 def setup_logging(verbose: bool = False):

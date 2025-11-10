@@ -65,9 +65,17 @@ env/
 
 # Project-specific
 .env
+.env.local
 output.json
 output_csv/
 *.log
+
+# Neo4j / Docker
+neo4j_data/
+neo4j_logs/
+neo4j_import/
+neo4j_plugins/
+backups/
 
 # Data directories (keep structure, ignore content)
 RAW_DATA/

@@ -13,6 +13,10 @@ Professional data extraction tool for parsing MicroStrategy HTML documentation a
 - [Data Model](#data-model)
   - [JSON Schema](#json-schema)
   - [Graph Model](#graph-model)
+- [Neo4j Graph Database](#️-neo4j-graph-database)
+  - [Quick Start](#quick-start)
+  - [Environment Management](#environment-management)
+  - [Common Use Cases](#common-use-cases)
 
 ---
 
@@ -871,11 +875,390 @@ beautifulsoup4>=4.12.0
 lxml>=4.9.0
 pyyaml>=6.0.0
 pydantic>=2.0.0
+neo4j>=5.15.0
+python-dotenv>=1.0.0
 ```
 
 **Optional:**
 - `psycopg2-binary` - PostgreSQL database support
 - `pytest`, `black`, `mypy`, `ruff` - Development tools
+
+---
+
+## 🗄️ Neo4j Graph Database
+
+### Overview
+
+The extracted MicroStrategy data can be loaded into a Neo4j graph database for powerful relationship queries, lineage tracking, and visual exploration. The graph model preserves the complete hierarchical structure with support for:
+
+- **Environment Tracking**: Version and track data across different environments (Production, Development, UAT)
+- **Lineage Tracking**: Trace data flow from tables → facts/attributes → metrics → datasets → reports
+- **Metric Composition**: Navigate recursive composite metric structures
+- **Impact Analysis**: Find all reports affected by changes to a specific table or metric
+- **Visual Exploration**: Use Neo4j Browser and Bloom for interactive graph visualization
+
+### Quick Start
+
+#### 1. Start Neo4j with Docker
+
+```bash
+# Start Neo4j container (includes Browser at http://localhost:7474 and Bloom)
+docker-compose up -d
+
+# Check container status
+docker-compose ps
+
+# View logs
+docker-compose logs -f neo4j
+```
+
+**Access Neo4j Browser**: http://localhost:7474
+- Username: `neo4j` (configurable in `.env`)
+- Password: `microstrategy2024` (configurable in `.env`)
+
+#### 2. Initialize Schema (Constraints and Indexes)
+
+```bash
+# Install Neo4j driver
+pip install neo4j python-dotenv
+
+# Initialize schema (run once after starting Neo4j)
+python scripts/init_neo4j_schema.py
+
+# Or with custom connection
+python scripts/init_neo4j_schema.py \
+  --uri bolt://localhost:7687 \
+  --user neo4j \
+  --password mypassword
+```
+
+This creates:
+- **Unique constraints** on all node IDs (prevents duplicates)
+- **Performance indexes** on name fields and type properties
+- **Composite constraint** for Function nodes (name + file_path)
+
+#### 3. Load Data into Neo4j
+
+```bash
+# Load all data for Production environment
+python scripts/load_to_neo4j.py \
+  --json-file output.json \
+  --environment-id prod-2024-11 \
+  --environment-name "Production"
+
+# Load specific entities only
+python scripts/load_to_neo4j.py \
+  --json-file output.json \
+  --environment-id dev-latest \
+  --environment-name "Development" \
+  --entities reports,datasets,attributes
+
+# Dry run (preview what would be loaded)
+python scripts/load_to_neo4j.py \
+  --json-file output.json \
+  --environment-id test-001 \
+  --environment-name "Test" \
+  --dry-run
+```
+
+**Available Entity Filters:**
+- `all` (default): Load everything
+- `reports`: Reports only
+- `datasets`: Datasets and CONTAINS relationships
+- `attributes`: Attributes, Forms, and Tables (from attributes)
+- `metrics`: Metrics, Functions, Facts, Tables (from facts), and composite relationships
+
+**Performance Options:**
+```bash
+# Adjust batch size for large datasets
+python scripts/load_to_neo4j.py \
+  --json-file output.json \
+  --environment-id prod \
+  --environment-name "Production" \
+  --batch-size 500
+```
+
+#### 4. Update Existing Data
+
+The loading script uses **MERGE operations** to support both insert and update:
+
+```bash
+# Re-run with same environment ID to update existing data
+python scripts/load_to_neo4j.py \
+  --json-file output_updated.json \
+  --environment-id prod-2024-11 \
+  --environment-name "Production"
+
+# Existing nodes are updated, new nodes are created
+# No duplicates are created
+```
+
+### Environment Management
+
+#### Understanding Environments
+
+Every node in the graph is linked to an **Environment** via the `BELONGS_TO` relationship. This enables:
+
+1. **Multi-environment deployments**: Load Production, Development, and UAT data into the same database
+2. **Version tracking**: Compare how the same report differs across environments
+3. **Selective operations**: Query or delete data for specific environments only
+4. **Audit trail**: Track when data was loaded via `loaded_at` timestamp
+
+#### Example: Multiple Environments
+
+```bash
+# Load Production data
+python scripts/load_to_neo4j.py \
+  --json-file prod_data.json \
+  --environment-id prod-2024-11 \
+  --environment-name "Production"
+
+# Load Development data
+python scripts/load_to_neo4j.py \
+  --json-file dev_data.json \
+  --environment-id dev-2024-11 \
+  --environment-name "Development"
+
+# Load UAT data
+python scripts/load_to_neo4j.py \
+  --json-file uat_data.json \
+  --environment-id uat-2024-11 \
+  --environment-name "UAT"
+```
+
+#### Query Specific Environment
+
+```cypher
+// Find all reports in Production
+MATCH (r:Report)-[:BELONGS_TO]->(e:Environment {name: 'Production'})
+RETURN r.name, r.id;
+
+// Compare same metric across environments
+MATCH (m:Metric {id: 'ABC123...'})-[:BELONGS_TO]->(e:Environment)
+RETURN e.name as Environment, m.formula as Formula;
+```
+
+#### Delete Environment Data
+
+```cypher
+// Delete all data for Development environment
+MATCH (e:Environment {id: 'dev-2024-11'})
+OPTIONAL MATCH (n)-[:BELONGS_TO]->(e)
+DETACH DELETE e, n;
+```
+
+### Neo4j Browser and Bloom
+
+#### Neo4j Browser (included by default)
+
+Access at **http://localhost:7474**
+
+**Key Features:**
+- Execute Cypher queries interactively
+- Visualize query results as graphs
+- Export results as CSV/JSON
+- Save and share queries
+
+**Useful Queries:**
+
+```cypher
+// Get environment overview
+MATCH (e:Environment)
+OPTIONAL MATCH (n)-[:BELONGS_TO]->(e)
+RETURN e.name, labels(n) as NodeType, count(n) as Count
+ORDER BY e.name, Count DESC;
+
+// Find reports using a specific table
+MATCH (r:Report)-[:CONTAINS]->(d:Dataset)-[:HAS_ATTRIBUTE]->
+      (a:Attribute)-[:HAS_FORM]->(f:Form)-[:USES_TABLE]->
+      (t:Table {name: 'FT_SALES'})
+RETURN DISTINCT r.name;
+
+// Trace metric lineage
+MATCH path = (m:Metric {name: 'Net Profit'})-[:COMPOSED_OF*]->(component:Metric)
+RETURN path;
+```
+
+#### Neo4j Bloom (included)
+
+**Bloom** is a visual graph exploration tool perfect for:
+- Interactive data exploration without writing Cypher
+- Creating custom perspectives (views)
+- Presenting data to non-technical stakeholders
+- Finding hidden patterns and relationships
+
+**Recommended Perspectives:**
+1. **Report Lineage**: Trace from Report → Dataset → Metrics/Attributes → Tables
+2. **Metric Composition**: Visualize recursive metric structures
+3. **Environment Comparison**: Compare same entities across environments
+4. **Impact Analysis**: Show all reports affected by a table change
+
+**Color Scheme (Suggested):**
+- Reports: Blue
+- Datasets: Yellow
+- Attributes: Green
+- Metrics (Simple): Light Pink
+- Metrics (Composite): Dark Pink
+- Facts: Orange
+- Functions: Light Green
+- Tables: Purple
+- Environment: Gray
+
+### Documentation
+
+**[GRAPHMODEL.md](GRAPHMODEL.md)** - Complete graph schema documentation:
+- Complete node and relationship definitions
+- Constraint and index specifications
+- 10+ Cypher query examples
+- Data loading strategy and best practices
+- Bloom visualization guidelines
+
+**[NEO4J_BUSINESS_QUERIES.md](NEO4J_BUSINESS_QUERIES.md)** - Detailed analysis queries:
+- Impact analysis (table changes → affected reports)
+- Column change analysis (what breaks when you rename a column)
+- Unused resource detection
+- Shared resource analysis
+- Metric lineage tracing
+- Migration planning queries
+- Dependency analysis for phased migrations
+
+**[NEO4J_VISUAL_QUERIES.md](NEO4J_VISUAL_QUERIES.md)** - Simple visual queries (⭐ recommended):
+- One query per question
+- Returns graph visualizations for visual exploration
+- Perfect for Neo4j Browser and Bloom
+- Click and navigate through relationships
+
+### Common Use Cases
+
+#### 1. Find All Reports Using a Specific Table
+
+```cypher
+// Through attributes
+MATCH (r:Report)-[:CONTAINS]->(d:Dataset)-[:HAS_ATTRIBUTE]->
+      (a:Attribute)-[:HAS_FORM]->(f:Form)-[:USES_TABLE]->
+      (t:Table {name: 'DIM_CUSTOMER'})
+RETURN DISTINCT r.name as Report;
+
+// Through facts/metrics
+MATCH (r:Report)-[:CONTAINS]->(d:Dataset)-[:HAS_METRIC]->
+      (m:Metric)-[:USES_FACT]->(fact:Fact)-[:READS_FROM]->
+      (t:Table {name: 'FT_SALES'})
+RETURN DISTINCT r.name as Report;
+```
+
+#### 2. Break Down Composite Metrics
+
+```cypher
+// Recursive breakdown
+MATCH path = (m:Metric {name: 'ROI %'})-[:COMPOSED_OF*]->(component:Metric)
+RETURN component.name, component.tipo, component.formula, length(path) as Depth
+ORDER BY Depth;
+```
+
+#### 3. Environment Statistics
+
+```cypher
+MATCH (e:Environment)
+OPTIONAL MATCH (r:Report)-[:BELONGS_TO]->(e)
+OPTIONAL MATCH (m:Metric)-[:BELONGS_TO]->(e)
+OPTIONAL MATCH (t:Table)-[:BELONGS_TO]->(e)
+RETURN e.name as Environment,
+       count(DISTINCT r) as Reports,
+       count(DISTINCT m) as Metrics,
+       count(DISTINCT t) as Tables;
+```
+
+#### 4. Find Data Quality Issues
+
+```cypher
+// Find metrics without formulas
+MATCH (m:Metric)-[:BELONGS_TO]->(e:Environment {name: 'Production'})
+WHERE m.formula IS NULL OR m.formula = ''
+RETURN m.name, m.id;
+
+// Find orphaned nodes (not linked to any environment)
+MATCH (n)
+WHERE NOT (n)-[:BELONGS_TO]->(:Environment)
+RETURN labels(n) as Type, count(n) as Count;
+```
+
+### Docker Configuration
+
+The `docker-compose.yml` includes:
+
+- **Neo4j Community Edition 5.15**: Free, full-featured graph database
+- **Persistent Volumes**: Data survives container restarts
+- **APOC Plugin Support**: Extended procedures for data manipulation
+- **Bloom Integration**: Visual graph exploration
+- **Configurable Memory**: Adjust heap and page cache via `.env`
+
+**Environment Variables** (add to `.env`):
+
+```bash
+# Neo4j Authentication
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=microstrategy2024
+
+# Neo4j Connection
+NEO4J_URI=bolt://localhost:7687
+NEO4J_DATABASE=neo4j
+
+# Neo4j Ports
+NEO4J_HTTP_PORT=7474
+NEO4J_BOLT_PORT=7687
+
+# Memory Settings (adjust for your system)
+NEO4J_HEAP_INITIAL=512m
+NEO4J_HEAP_MAX=2G
+NEO4J_PAGECACHE=512m
+```
+
+### Maintenance
+
+#### Backup Data
+
+```bash
+# Stop Neo4j
+docker-compose stop neo4j
+
+# Backup data volume
+docker run --rm \
+  -v microstrategy-neo4j_data:/data \
+  -v $(pwd)/backups:/backup \
+  alpine tar czf /backup/neo4j-backup-$(date +%Y%m%d).tar.gz /data
+
+# Restart Neo4j
+docker-compose start neo4j
+```
+
+#### Clear All Data
+
+```cypher
+// Delete everything (use with caution!)
+MATCH (n)
+DETACH DELETE n;
+
+// Then re-initialize schema
+```
+
+```bash
+python scripts/init_neo4j_schema.py
+```
+
+#### Monitor Performance
+
+```cypher
+// Show database statistics
+CALL apoc.meta.stats();
+
+// Show current queries
+CALL dbms.listQueries();
+
+// Profile a slow query
+PROFILE
+MATCH (r:Report)-[:CONTAINS*3..5]-(t:Table)
+RETURN r.name, t.name;
+```
 
 ---
 

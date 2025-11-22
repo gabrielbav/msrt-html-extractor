@@ -1,27 +1,29 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "microstrategy-extractor"
 version = "2.0.0"
-description = "MicroStrategy HTML Documentation Parser and Data Model Extractor"
+description = "Professional data extraction tool for parsing MicroStrategy HTML documentation and extracting complex relationships"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
-    {name = "MicroStrategy Extractor Team"}
+    {name = "Your Name", email = "your.email@example.com"}
 ]
-keywords = ["microstrategy", "html", "parser", "extractor", "data-model"]
+keywords = ["microstrategy", "data-extraction", "html-parser", "neo4j", "data-modeling"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
 dependencies = [
@@ -29,29 +31,25 @@ dependencies = [
     "lxml>=4.9.0",
     "pyyaml>=6.0.0",
     "pydantic>=2.0.0",
+    "neo4j>=5.15.0",
+    "python-dotenv>=1.0.0",
+    "tqdm>=4.66.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
     "black>=23.0.0",
     "mypy>=1.0.0",
     "ruff>=0.1.0",
 ]
-db = [
-    "psycopg2-binary>=2.9.0",  # PostgreSQL
+database = [
+    "psycopg2-binary>=2.9.0",
 ]
 
 [project.scripts]
-mstr-extract = "microstrategy_extractor.cli:main"
-mstr-validate = "microstrategy_extractor.cli:validate"
-mstr-export = "microstrategy_extractor.cli:export"
-
-[project.urls]
-Homepage = "https://github.com/your-org/microstrategy-extractor"
-Documentation = "https://github.com/your-org/microstrategy-extractor/tree/main/docs"
-Repository = "https://github.com/your-org/microstrategy-extractor"
+microstrategy-extract = "microstrategy_extractor.scripts.load_to_neo4j:main"
+microstrategy-init-neo4j = "microstrategy_extractor.scripts.init_neo4j_schema:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -62,7 +60,7 @@ include = ["microstrategy_extractor*"]
 
 [tool.black]
 line-length = 100
-target-version = ['py38', 'py39', 'py310', 'py311']
+target-version = ["py38", "py39", "py310", "py311", "py312"]
 include = '\.pyi?$'
 
 [tool.mypy]
@@ -75,24 +73,9 @@ ignore_missing_imports = true
 [tool.ruff]
 line-length = 100
 target-version = "py38"
+select = ["E", "F", "W", "I", "N", "UP"]
+ignore = []
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = "-v --cov=microstrategy_extractor --cov-report=html --cov-report=term"
-
-[tool.coverage.run]
-source = ["src/microstrategy_extractor"]
-omit = ["*/tests/*", "*/legacy/*"]
-
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if __name__ == .__main__.:",
-]
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]
 

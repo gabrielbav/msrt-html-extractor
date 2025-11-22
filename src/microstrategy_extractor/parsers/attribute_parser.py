@@ -218,7 +218,10 @@ def _extract_logic_tables_from_form(nested_table: BeautifulSoup) -> List[Dict]:
     # Find column indices
     for i, h in enumerate(headers):
         h_norm = TextNormalizer.for_comparison(h)
-        if TableHeaders.EXPRESSAO.upper() in h_norm or TableHeaders.EXPRESSION in h_norm:
+        # Normalize the constants too for proper comparison
+        expressao_norm = TextNormalizer.for_comparison(TableHeaders.EXPRESSAO)
+        expression_norm = TextNormalizer.for_comparison(TableHeaders.EXPRESSION)
+        if expressao_norm in h_norm or expression_norm in h_norm:
             expr_col = i
         if TableHeaders.TABELAS_FONTE in h.upper() or (TableHeaders.TABELA in h.upper() and TableHeaders.FONTE in h.upper()):
             table_col = i
@@ -231,6 +234,9 @@ def _extract_logic_tables_from_form(nested_table: BeautifulSoup) -> List[Dict]:
         column_name = None
         if expr_col is not None and len(cells) > expr_col:
             column_name = cells[expr_col].get_text(strip=True)
+            # Only set to None if empty string
+            if not column_name:
+                column_name = None
         
         # Extract source tables
         if table_col is not None and len(cells) > table_col:

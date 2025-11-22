@@ -8,15 +8,10 @@ Professional data extraction tool for parsing MicroStrategy HTML documentation a
 - [How to Use](#how-to-use)
   - [Configuration](#configuration)
   - [Commands](#commands)
-  - [Export to CSV](#export-to-csv)
 - [Project Structure](#project-structure)
 - [Data Model](#data-model)
   - [JSON Schema](#json-schema)
   - [Graph Model](#graph-model)
-- [Neo4j Graph Database](#️-neo4j-graph-database)
-  - [Quick Start](#quick-start)
-  - [Environment Management](#environment-management)
-  - [Common Use Cases](#common-use-cases)
 
 ---
 
@@ -28,27 +23,34 @@ Professional data extraction tool for parsing MicroStrategy HTML documentation a
 - pip (Python package manager)
 - MicroStrategy HTML documentation files
 
-### Steps
+### Installation Steps
 
-1. **Install dependencies:**
+1. **Clone the repository:**
+
+```bash
+git clone <repository-url>
+cd microstrategy-extractor
+```
+
+2. **Install dependencies:**
 
 ```bash
 pip install -r requirements.txt
 ```
 
-2. **Optional - Install as package (recommended):**
+3. **Install the package:**
 
 ```bash
 pip install -e .
 ```
 
-This allows you to import the package from anywhere without modifying `sys.path`.
-
-3. **Verify installation:**
+4. **Verify installation:**
 
 ```bash
-python -c "import sys; sys.path.insert(0, 'src'); from microstrategy_extractor import Config; print('✓ Installation successful')"
+python -c "from microstrategy_extractor import Config; print('✓ Installation successful')"
 ```
+
+You're ready to extract data! See the [Commands](#commands) section below.
 
 ---
 
@@ -66,7 +68,6 @@ BASE_PATH=RAW_DATA/04 - Relatórios Gerenciais - BARE (20250519221644)
 
 # Output paths
 OUTPUT_JSON=output.json
-OUTPUT_CSV_DIR=output_csv
 
 # Cache settings
 CACHE_ENABLED=true
@@ -87,7 +88,6 @@ MAX_WORKERS=4
 |-----------|-------------|---------|--------------|
 | `BASE_PATH` | Directory containing MicroStrategy HTML files | Required | Valid directory path |
 | `OUTPUT_JSON` | Output JSON file path | `output.json` | Any .json file path |
-| `OUTPUT_CSV_DIR` | Directory for CSV exports | `output_csv` | Any directory path |
 | `CACHE_ENABLED` | Enable/disable caching | `true` | `true`, `false` |
 | `CACHE_SIZE_LIMIT` | Maximum cache items (LRU eviction) | `1000` | Positive integer |
 | `LOG_LEVEL` | Logging verbosity | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
@@ -134,7 +134,6 @@ config = Config.from_env()
 config = Config(
     base_path=Path("RAW_DATA/04 - Relatórios Gerenciais"),
     output_json_path=Path("output.json"),
-    output_csv_dir=Path("output_csv"),
     log_level="DEBUG",
     cache_size_limit=5000,
     verbose=True
@@ -151,53 +150,77 @@ if errors:
 
 ### Commands
 
-#### 1. Extract All Reports
+#### Main CLI Commands
 
-Extract all reports from the HTML documentation:
+**Extract all reports:**
+```bash
+python main.py --base-path <path> --output-json output.json
+```
+
+**Extract specific report by name:**
+```bash
+python main.py --base-path <path> --report "Report Name" --output-json output.json
+```
+
+**Extract report by ID:**
+```bash
+python main.py --base-path <path> --report-id "ABC123..." --output-json output.json
+```
+
+**Filter reports by pattern:**
+```bash
+python main.py --base-path <path> --filter "Boletim" --output-json output.json
+```
+
+**Enable verbose logging (debug mode):**
+```bash
+python main.py --base-path <path> --output-json output.json --verbose
+```
+
+**Use aggressive caching (faster, more RAM):**
+```bash
+python main.py --base-path <path> --output-json output.json --aggressive-cache
+```
+
+#### Script Commands
+
+**Initialize Neo4j schema:**
+```bash
+python -m microstrategy_extractor.scripts.init_neo4j_schema \
+  --uri bolt://localhost:7687 \
+  --user neo4j \
+  --password microstrategy2024
+```
+
+**Load data to Neo4j:**
+```bash
+python -m microstrategy_extractor.scripts.load_to_neo4j \
+  --json-file output.json \
+  --environment-id prod-2024-11 \
+  --environment-name "Production"
+```
+
+#### Full Example
 
 ```bash
+# 1. Extract all reports to JSON
 python main.py \
   --base-path "RAW_DATA/04 - Relatórios Gerenciais - BARE (20250519221644)" \
   --output-json output.json \
-  --output-csv-dir output_csv
-```
-
-#### 2. Extract Specific Report by Name
-
-```bash
-python main.py \
-  --base-path "RAW_DATA/04 - Relatórios Gerenciais" \
-  --report "04.10.043 - Resultado Comercial - Líderes" \
-  --output-json output.json
-```
-
-#### 3. Extract by Report ID
-
-```bash
-python main.py \
-  --base-path "RAW_DATA/04 - Relatórios Gerenciais" \
-  --report-id "D8C7F01F4650B3CBC97AB991C79FB9DF" \
-  --output-json output.json
-```
-
-#### 4. Verbose Mode (Debug Logging)
-
-```bash
-python main.py \
-  --base-path "RAW_DATA/04 - Relatórios Gerenciais" \
-  --output-json output.json \
   --verbose
+
+# 2. Load to Neo4j (optional)
+python -m microstrategy_extractor.scripts.load_to_neo4j \
+  --json-file output.json \
+  --environment-id prod-2024-11 \
+  --environment-name "Production"
 ```
 
 #### Python API Usage
 
 ```python
-import sys
-sys.path.insert(0, 'src')
-
 from microstrategy_extractor.extractors import ReportExtractor
-from microstrategy_extractor.exporters import CSVExporter
-from microstrategy_extractor.validators import DataValidator
+from microstrategy_extractor.exporters import export_to_json
 from pathlib import Path
 
 # Initialize extractor
@@ -214,14 +237,8 @@ relatorios = extractor.extract_report("Report Name")
 # Extract by ID
 relatorio = extractor.extract_report_by_id("ABC123...")
 
-# Validate data
-validator = DataValidator()
-result = validator.validate_extraction(relatorios)
-if result.valid:
-    print("✓ All data is valid")
-else:
-    for error in result.errors:
-        print(f"✗ {error}")
+# Export to JSON
+export_to_json(relatorios, Path("output.json"))
 ```
 
 #### Parallel Processing (2-4x Faster)
@@ -247,111 +264,34 @@ relatorios = extract_reports_parallel(
 
 ---
 
-### Export to CSV
-
-The system exports **16 normalized CSV files** organized into entities and relationships.
-
-#### Entity Files (8)
-
-1. **Reports.csv** - Report objects
-   - Fields: `id`, `name`, `file_path`
-
-2. **DataSets.csv** - Dataset objects (Intelligent Cubes, Reports, Shortcuts)
-   - Fields: `id`, `name`, `file_path`, `applicationObject`, `graphic`
-
-3. **Attributes.csv** - Attribute objects
-   - Fields: `id`, `name`, `name_on_dataset`, `file_path`, `applicationSchema`
-
-4. **Metrics.csv** - Metric objects
-   - Fields: `id`, `name`, `file_path`, `applicationObject`, `tipo`, `formula`
-
-5. **Facts.csv** - Fact objects
-   - Fields: `id`, `name`, `file_path`, `applicationObject`
-
-6. **Functions.csv** - Aggregation functions
-   - Fields: `id`, `name`, `file_path`, `applicationObject`
-
-7. **Tables.csv** - Logical tables (source tables)
-   - Fields: `id`, `name`, `file_path`, `applicationObject`
-
-8. **AttributesForm.csv** - Attribute forms
-   - Fields: `attribute_id`, `form_name`
-
-#### Relationship Files (8)
-
-1. **Report_DataSet.csv** - Report → DataSet
-   - Fields: `report_id`, `dataset_id`
-
-2. **DataSet_Attribute.csv** - DataSet → Attribute
-   - Fields: `dataset_id`, `attribute_id`
-
-3. **DataSet_Metric.csv** - DataSet → Metric
-   - Fields: `dataset_id`, `metric_id`
-
-4. **AttributeForm_Table.csv** - Attribute Form → Table
-   - Fields: `attribute_id`, `form_name`, `table_id`, `column_name`
-
-5. **Metric_Function.csv** - Metric → Function
-   - Fields: `metric_id`, `function_id`
-
-6. **Metric_Fact.csv** - Metric → Fact
-   - Fields: `metric_id`, `fact_id`
-
-7. **Fact_Table.csv** - Fact → Table
-   - Fields: `fact_id`, `table_id`, `column_name`
-
-8. **Metric_Metric.csv** - Composite Metric → Component Metrics
-   - Fields: `metric_parent_id`, `metric_child_id`
-
-#### Export Usage
-
-```python
-from microstrategy_extractor.exporters import CSVExporter
-from pathlib import Path
-
-# Export to CSV
-exporter = CSVExporter(Path("output_csv"))
-exporter.export(relatorios)
-
-print("✓ Exported 16 CSV files to output_csv/")
-```
-
-The CSV files can be imported into:
-- Excel / Google Sheets
-- Relational databases (PostgreSQL, MySQL)
-- Power BI / Tableau
-- Pandas for analysis
-
----
-
 ## 📁 Project Structure
 
 ```
-BlankProject/
+microstrategy-extractor/
 ├── src/
 │   └── microstrategy_extractor/          # Main package
-│       ├── core/                          # Core models and types
+│       ├── core/                          # Core models, types, exceptions, constants
 │       │   ├── constants.py               # Constants and enums
 │       │   ├── exceptions.py              # Custom exceptions
-│       │   ├── models.py                  # Data models (Pydantic)
+│       │   ├── models.py                  # Data models (dataclasses)
 │       │   └── types.py                   # Type definitions
 │       │
 │       ├── config/                        # Configuration management
 │       │   └── settings.py                # Config class (env, CLI, code)
 │       │
-│       ├── cache/                         # Cache abstraction
+│       ├── cache/                         # Caching system
 │       │   ├── cache_manager.py           # Abstract cache interface
 │       │   └── memory_cache.py            # LRU cache implementation
 │       │
-│       ├── parsers/                       # HTML parsing modules
+│       ├── parsers/                       # HTML parsing
 │       │   ├── base_parser.py             # Base parser class
 │       │   ├── report_parser.py           # Report parsing
 │       │   ├── metric_parser.py           # Metric parsing
 │       │   ├── attribute_parser.py        # Attribute parsing
 │       │   ├── fact_parser.py             # Fact parsing
-│       │   └── link_resolver.py           # Link resolution (ID/name)
+│       │   └── link_resolver.py           # Link resolution
 │       │
-│       ├── extractors/                    # Extraction logic
+│       ├── extractors/                    # Data extraction
 │       │   ├── base_extractor.py          # Base extractor class
 │       │   ├── report_extractor.py        # Report extraction
 │       │   ├── metric_extractor.py        # Metric extraction
@@ -360,39 +300,23 @@ BlankProject/
 │       │   ├── parallel_extractor.py      # Parallel processing
 │       │   └── extractor_helpers.py       # Helper functions
 │       │
-│       ├── exporters/                     # Data export
-│       │   └── csv_exporter.py            # CSV export (16 files)
-│       │
 │       ├── validators/                    # Data validation
-│       │   └── data_validator.py          # Pydantic validators
+│       │   └── data_validator.py          # Validators
 │       │
 │       ├── utils/                         # Utilities
 │       │   ├── logger.py                  # Structured logging
 │       │   └── text_normalizer.py         # Text normalization
 │       │
-│       ├── db/                            # Database utilities
-│       │   └── schema_loader.py           # YAML schema loader
+│       ├── scripts/                       # CLI scripts
+│       │   ├── init_neo4j_schema.py       # Initialize Neo4j schema
+│       │   └── load_to_neo4j.py           # Load data to Neo4j
 │       │
-│       └── legacy/                        # Deprecated code
-│           └── (old modules)
+│       └── exporters/                     # Data exporters
+│           └── json_exporter.py           # JSON export functionality
 │
-├── config/                                # Configuration files
-│   └── db_schema.yaml                     # Database schema definition
-│
-├── scripts/                               # Utility scripts
-│   ├── import_to_database.py              # Import CSV to database
-│   └── normalize_data.py                  # JSON to CSV conversion
-│
-├── RAW_DATA/                              # Input HTML files
-│   └── (MicroStrategy HTML documentation)
-│
-├── output_csv/                            # CSV exports
-│   └── (16 CSV files)
-│
-├── main.py                                # CLI entry point
+├── docker-compose.yml                     # Neo4j Docker setup
+├── main.py                                # Main CLI entry point
 ├── requirements.txt                       # Python dependencies
-├── pyproject.toml                         # Modern packaging config
-├── output.json                            # JSON export
 └── README.md                              # This file
 ```
 
@@ -410,11 +334,15 @@ The extraction produces a hierarchical JSON structure representing the complete 
     {
       "name": "",
       "id": "",
+      "migration_stage": null,
+      "decision": null,
       "file_path": "",
       "datasets": [
         {
           "name": "",
           "id": "",
+          "migration_stage": null,
+          "decision": null,
           "file_path": "",
           "applicationObject": "",
           "graphic": "",
@@ -423,15 +351,20 @@ The extraction produces a hierarchical JSON structure representing the complete 
               "name": "",
               "name_on_dataset": "",
               "id": "",
+              "migration_stage": null,
+              "decision": null,
               "file_path": "",
               "applicationSchema": "",
               "formularios": [
                 {
+                  "id": "",
                   "name": "",
                   "logic_tables": [
                     {
                       "name": "",
                       "id": "",
+                      "migration_stage": null,
+                      "decision": null,
                       "file_path": "",
                       "column_name": ""
                     }
@@ -444,6 +377,8 @@ The extraction produces a hierarchical JSON structure representing the complete 
             {
               "name": "",
               "id": "",
+              "migration_stage": null,
+              "decision": null,
               "file_path": "",
               "applicationObject": "",
               "tipo": "",
@@ -461,6 +396,8 @@ The extraction produces a hierarchical JSON structure representing the complete 
                   {
                     "name": "",
                     "id": "",
+                    "migration_stage": null,
+                    "decision": null,
                     "file_path": "",
                     "column_name": ""
                   }
@@ -493,6 +430,22 @@ The extraction produces a hierarchical JSON structure representing the complete 
 | `formularios` | array | Attribute forms | List of form objects |
 | `logic_tables` | array | Source tables | List of table objects |
 | `metricas` | array | Component metrics (for composite) | Recursive metric list |
+| `migration_stage` | string\|null | Migration workflow stage | null (default) |
+| `decision` | string\|null | Migration decision | null (default) |
+
+**Migration Control Fields:**
+
+The extractor outputs two additional fields for migration workflow management:
+
+- **`migration_stage`**: Tracks the current stage in the migration workflow
+- **`decision`**: Indicates the migration decision for the object
+
+These fields are initialized as `null` during extraction and are intended to be populated by external migration management processes. They appear on:
+- `relatorios` (reports)
+- `datasets`
+- `atributos` (attributes)
+- `metricas` (metrics)
+- `logic_tables`
 
 ---
 
@@ -779,7 +732,7 @@ graph TD
 - ✅ **Optimized Caching**: LRU cache with namespace isolation
 - ✅ **Recursive Metrics**: Supports complex composite metric structures
 - ✅ **Encoding Handling**: Automatic detection (UTF-8, ISO-8859-1, Latin-1)
-- ✅ **Multiple Exports**: JSON (hierarchical) and CSV (normalized)
+- ✅ **JSON Export**: Hierarchical JSON output format
 - ✅ **Flexible Configuration**: Environment variables, CLI args, programmatic
 - ✅ **Zero Hardcoding**: All values configurable
 - ✅ **Type Safety**: Complete type hints throughout codebase
@@ -819,16 +772,6 @@ if not result.valid:
     print(f"Validation errors: {len(result.errors)}")
     for error in result.errors:
         print(f"  - {error}")
-```
-
-### Database Import
-
-```bash
-# Generate SQL schema
-cd scripts
-python import_to_database.py \
-  --connection-string "host=localhost dbname=mstr user=user password=pass" \
-  --csv-dir ../output_csv
 ```
 
 ---
@@ -882,383 +825,6 @@ python-dotenv>=1.0.0
 **Optional:**
 - `psycopg2-binary` - PostgreSQL database support
 - `pytest`, `black`, `mypy`, `ruff` - Development tools
-
----
-
-## 🗄️ Neo4j Graph Database
-
-### Overview
-
-The extracted MicroStrategy data can be loaded into a Neo4j graph database for powerful relationship queries, lineage tracking, and visual exploration. The graph model preserves the complete hierarchical structure with support for:
-
-- **Environment Tracking**: Version and track data across different environments (Production, Development, UAT)
-- **Lineage Tracking**: Trace data flow from tables → facts/attributes → metrics → datasets → reports
-- **Metric Composition**: Navigate recursive composite metric structures
-- **Impact Analysis**: Find all reports affected by changes to a specific table or metric
-- **Visual Exploration**: Use Neo4j Browser and Bloom for interactive graph visualization
-
-### Quick Start
-
-#### 1. Start Neo4j with Docker
-
-```bash
-# Start Neo4j container (includes Browser at http://localhost:7474 and Bloom)
-docker-compose up -d
-
-# Check container status
-docker-compose ps
-
-# View logs
-docker-compose logs -f neo4j
-```
-
-**Access Neo4j Browser**: http://localhost:7474
-- Username: `neo4j` (configurable in `.env`)
-- Password: `microstrategy2024` (configurable in `.env`)
-
-#### 2. Initialize Schema (Constraints and Indexes)
-
-```bash
-# Install Neo4j driver
-pip install neo4j python-dotenv
-
-# Initialize schema (run once after starting Neo4j)
-python scripts/init_neo4j_schema.py
-
-# Or with custom connection
-python scripts/init_neo4j_schema.py \
-  --uri bolt://localhost:7687 \
-  --user neo4j \
-  --password mypassword
-```
-
-This creates:
-- **Unique constraints** on all node IDs (prevents duplicates)
-- **Performance indexes** on name fields and type properties
-- **Composite constraint** for Function nodes (name + file_path)
-
-#### 3. Load Data into Neo4j
-
-```bash
-# Load all data for Production environment
-python scripts/load_to_neo4j.py \
-  --json-file output.json \
-  --environment-id prod-2024-11 \
-  --environment-name "Production"
-
-# Load specific entities only
-python scripts/load_to_neo4j.py \
-  --json-file output.json \
-  --environment-id dev-latest \
-  --environment-name "Development" \
-  --entities reports,datasets,attributes
-
-# Dry run (preview what would be loaded)
-python scripts/load_to_neo4j.py \
-  --json-file output.json \
-  --environment-id test-001 \
-  --environment-name "Test" \
-  --dry-run
-```
-
-**Available Entity Filters:**
-- `all` (default): Load everything
-- `reports`: Reports only
-- `datasets`: Datasets and CONTAINS relationships
-- `attributes`: Attributes, Forms, and Tables (from attributes)
-- `metrics`: Metrics, Functions, Facts, Tables (from facts), and composite relationships
-
-**Performance Options:**
-```bash
-# Adjust batch size for large datasets
-python scripts/load_to_neo4j.py \
-  --json-file output.json \
-  --environment-id prod \
-  --environment-name "Production" \
-  --batch-size 500
-```
-
-#### 4. Update Existing Data
-
-The loading script uses **MERGE operations** to support both insert and update:
-
-```bash
-# Re-run with same environment ID to update existing data
-python scripts/load_to_neo4j.py \
-  --json-file output_updated.json \
-  --environment-id prod-2024-11 \
-  --environment-name "Production"
-
-# Existing nodes are updated, new nodes are created
-# No duplicates are created
-```
-
-### Environment Management
-
-#### Understanding Environments
-
-Every node in the graph is linked to an **Environment** via the `BELONGS_TO` relationship. This enables:
-
-1. **Multi-environment deployments**: Load Production, Development, and UAT data into the same database
-2. **Version tracking**: Compare how the same report differs across environments
-3. **Selective operations**: Query or delete data for specific environments only
-4. **Audit trail**: Track when data was loaded via `loaded_at` timestamp
-
-#### Example: Multiple Environments
-
-```bash
-# Load Production data
-python scripts/load_to_neo4j.py \
-  --json-file prod_data.json \
-  --environment-id prod-2024-11 \
-  --environment-name "Production"
-
-# Load Development data
-python scripts/load_to_neo4j.py \
-  --json-file dev_data.json \
-  --environment-id dev-2024-11 \
-  --environment-name "Development"
-
-# Load UAT data
-python scripts/load_to_neo4j.py \
-  --json-file uat_data.json \
-  --environment-id uat-2024-11 \
-  --environment-name "UAT"
-```
-
-#### Query Specific Environment
-
-```cypher
-// Find all reports in Production
-MATCH (r:Report)-[:BELONGS_TO]->(e:Environment {name: 'Production'})
-RETURN r.name, r.id;
-
-// Compare same metric across environments
-MATCH (m:Metric {id: 'ABC123...'})-[:BELONGS_TO]->(e:Environment)
-RETURN e.name as Environment, m.formula as Formula;
-```
-
-#### Delete Environment Data
-
-```cypher
-// Delete all data for Development environment
-MATCH (e:Environment {id: 'dev-2024-11'})
-OPTIONAL MATCH (n)-[:BELONGS_TO]->(e)
-DETACH DELETE e, n;
-```
-
-### Neo4j Browser and Bloom
-
-#### Neo4j Browser (included by default)
-
-Access at **http://localhost:7474**
-
-**Key Features:**
-- Execute Cypher queries interactively
-- Visualize query results as graphs
-- Export results as CSV/JSON
-- Save and share queries
-
-**Useful Queries:**
-
-```cypher
-// Get environment overview
-MATCH (e:Environment)
-OPTIONAL MATCH (n)-[:BELONGS_TO]->(e)
-RETURN e.name, labels(n) as NodeType, count(n) as Count
-ORDER BY e.name, Count DESC;
-
-// Find reports using a specific table
-MATCH (r:Report)-[:CONTAINS]->(d:Dataset)-[:HAS_ATTRIBUTE]->
-      (a:Attribute)-[:HAS_FORM]->(f:Form)-[:USES_TABLE]->
-      (t:Table {name: 'FT_SALES'})
-RETURN DISTINCT r.name;
-
-// Trace metric lineage
-MATCH path = (m:Metric {name: 'Net Profit'})-[:COMPOSED_OF*]->(component:Metric)
-RETURN path;
-```
-
-#### Neo4j Bloom (included)
-
-**Bloom** is a visual graph exploration tool perfect for:
-- Interactive data exploration without writing Cypher
-- Creating custom perspectives (views)
-- Presenting data to non-technical stakeholders
-- Finding hidden patterns and relationships
-
-**Recommended Perspectives:**
-1. **Report Lineage**: Trace from Report → Dataset → Metrics/Attributes → Tables
-2. **Metric Composition**: Visualize recursive metric structures
-3. **Environment Comparison**: Compare same entities across environments
-4. **Impact Analysis**: Show all reports affected by a table change
-
-**Color Scheme (Suggested):**
-- Reports: Blue
-- Datasets: Yellow
-- Attributes: Green
-- Metrics (Simple): Light Pink
-- Metrics (Composite): Dark Pink
-- Facts: Orange
-- Functions: Light Green
-- Tables: Purple
-- Environment: Gray
-
-### Documentation
-
-**[GRAPHMODEL.md](GRAPHMODEL.md)** - Complete graph schema documentation:
-- Complete node and relationship definitions
-- Constraint and index specifications
-- 10+ Cypher query examples
-- Data loading strategy and best practices
-- Bloom visualization guidelines
-
-**[NEO4J_BUSINESS_QUERIES.md](NEO4J_BUSINESS_QUERIES.md)** - Detailed analysis queries:
-- Impact analysis (table changes → affected reports)
-- Column change analysis (what breaks when you rename a column)
-- Unused resource detection
-- Shared resource analysis
-- Metric lineage tracing
-- Migration planning queries
-- Dependency analysis for phased migrations
-
-**[NEO4J_VISUAL_QUERIES.md](NEO4J_VISUAL_QUERIES.md)** - Simple visual queries (⭐ recommended):
-- One query per question
-- Returns graph visualizations for visual exploration
-- Perfect for Neo4j Browser and Bloom
-- Click and navigate through relationships
-
-### Common Use Cases
-
-#### 1. Find All Reports Using a Specific Table
-
-```cypher
-// Through attributes
-MATCH (r:Report)-[:CONTAINS]->(d:Dataset)-[:HAS_ATTRIBUTE]->
-      (a:Attribute)-[:HAS_FORM]->(f:Form)-[:USES_TABLE]->
-      (t:Table {name: 'DIM_CUSTOMER'})
-RETURN DISTINCT r.name as Report;
-
-// Through facts/metrics
-MATCH (r:Report)-[:CONTAINS]->(d:Dataset)-[:HAS_METRIC]->
-      (m:Metric)-[:USES_FACT]->(fact:Fact)-[:READS_FROM]->
-      (t:Table {name: 'FT_SALES'})
-RETURN DISTINCT r.name as Report;
-```
-
-#### 2. Break Down Composite Metrics
-
-```cypher
-// Recursive breakdown
-MATCH path = (m:Metric {name: 'ROI %'})-[:COMPOSED_OF*]->(component:Metric)
-RETURN component.name, component.tipo, component.formula, length(path) as Depth
-ORDER BY Depth;
-```
-
-#### 3. Environment Statistics
-
-```cypher
-MATCH (e:Environment)
-OPTIONAL MATCH (r:Report)-[:BELONGS_TO]->(e)
-OPTIONAL MATCH (m:Metric)-[:BELONGS_TO]->(e)
-OPTIONAL MATCH (t:Table)-[:BELONGS_TO]->(e)
-RETURN e.name as Environment,
-       count(DISTINCT r) as Reports,
-       count(DISTINCT m) as Metrics,
-       count(DISTINCT t) as Tables;
-```
-
-#### 4. Find Data Quality Issues
-
-```cypher
-// Find metrics without formulas
-MATCH (m:Metric)-[:BELONGS_TO]->(e:Environment {name: 'Production'})
-WHERE m.formula IS NULL OR m.formula = ''
-RETURN m.name, m.id;
-
-// Find orphaned nodes (not linked to any environment)
-MATCH (n)
-WHERE NOT (n)-[:BELONGS_TO]->(:Environment)
-RETURN labels(n) as Type, count(n) as Count;
-```
-
-### Docker Configuration
-
-The `docker-compose.yml` includes:
-
-- **Neo4j Community Edition 5.15**: Free, full-featured graph database
-- **Persistent Volumes**: Data survives container restarts
-- **APOC Plugin Support**: Extended procedures for data manipulation
-- **Bloom Integration**: Visual graph exploration
-- **Configurable Memory**: Adjust heap and page cache via `.env`
-
-**Environment Variables** (add to `.env`):
-
-```bash
-# Neo4j Authentication
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=microstrategy2024
-
-# Neo4j Connection
-NEO4J_URI=bolt://localhost:7687
-NEO4J_DATABASE=neo4j
-
-# Neo4j Ports
-NEO4J_HTTP_PORT=7474
-NEO4J_BOLT_PORT=7687
-
-# Memory Settings (adjust for your system)
-NEO4J_HEAP_INITIAL=512m
-NEO4J_HEAP_MAX=2G
-NEO4J_PAGECACHE=512m
-```
-
-### Maintenance
-
-#### Backup Data
-
-```bash
-# Stop Neo4j
-docker-compose stop neo4j
-
-# Backup data volume
-docker run --rm \
-  -v microstrategy-neo4j_data:/data \
-  -v $(pwd)/backups:/backup \
-  alpine tar czf /backup/neo4j-backup-$(date +%Y%m%d).tar.gz /data
-
-# Restart Neo4j
-docker-compose start neo4j
-```
-
-#### Clear All Data
-
-```cypher
-// Delete everything (use with caution!)
-MATCH (n)
-DETACH DELETE n;
-
-// Then re-initialize schema
-```
-
-```bash
-python scripts/init_neo4j_schema.py
-```
-
-#### Monitor Performance
-
-```cypher
-// Show database statistics
-CALL apoc.meta.stats();
-
-// Show current queries
-CALL dbms.listQueries();
-
-// Profile a slow query
-PROFILE
-MATCH (r:Report)-[:CONTAINS*3..5]-(t:Table)
-RETURN r.name, t.name;
-```
 
 ---
 

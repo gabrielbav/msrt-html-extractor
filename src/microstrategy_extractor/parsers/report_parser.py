@@ -6,6 +6,7 @@ from typing import List, Dict, Optional, Tuple
 from bs4 import BeautifulSoup, Comment
 
 from microstrategy_extractor.parsers.base_parser import parse_html_file, find_object_section
+from microstrategy_extractor.parsers.link_resolver import LinkResolver
 from microstrategy_extractor.utils.text_normalizer import TextNormalizer
 from microstrategy_extractor.utils.logger import get_logger
 from microstrategy_extractor.core.constants import HTMLSections, HTMLComments, HTMLImages, RegexPatterns
@@ -477,4 +478,194 @@ def extract_template_objects_report(soup: BeautifulSoup, anchor: str) -> Tuple[L
     
     logger.debug(f"Report format extracted: {len(atributos)} attributes, {len(metricas)} metrics")
     return atributos, metricas
+
+
+def extract_owner(soup: BeautifulSoup, pasta_index_path: Path, anchor: Optional[str] = None) -> Optional[Dict[str, str]]:
+    """
+    Extract owner information from report HTML.
+    
+    Args:
+        soup: BeautifulSoup object of report HTML
+        pasta_index_path: Path to Pasta.html for user lookup
+        anchor: Report anchor to restrict search to specific section
+        
+    Returns:
+        Dict with 'name', 'id', 'file_path' or None
+    """
+    # Find starting point (anchor or beginning)
+    start_element = soup
+    if anchor:
+        anchor_tag = soup.find('a', {'name': anchor})
+        if anchor_tag:
+            start_element = anchor_tag
+    
+    # Find "Proprietário:" field starting from the anchor
+    rows_to_search = start_element.find_all_next('tr', valign="TOP", limit=100) if anchor else soup.find_all('tr', valign="TOP")
+    
+    for row in rows_to_search:
+        cells = row.find_all('td')
+        if len(cells) >= 2:
+            label_text = cells[0].get_text(strip=True)
+            if 'Proprietário' in label_text or 'Proprietario' in label_text:
+                # Extract owner name from second cell
+                owner_text = cells[1].get_text(strip=True)
+                # Remove image tags and extract just the name
+                if owner_text:
+                    owner_name = owner_text.strip()
+                    
+                    # Lookup in Pasta.html
+                    try:
+                        resolver = LinkResolver(pasta_index_path, "User")
+                        owner_link = resolver.find_by_name(owner_name)
+                        if owner_link:
+                            owner_id = owner_link.get('anchor', '')
+                            file_path = f"{owner_link['file']}#{owner_id}" if owner_id else owner_link['file']
+                            fullname = owner_link.get('name', owner_name)
+                            return {
+                                'name': owner_name,
+                                'id': owner_id,
+                                'file_path': file_path,
+                                'fullname': fullname,
+                                'access': 'owner',
+                                'migration_stage': None,
+                                'decision': None
+                            }
+                        else:
+                            logger.warning(f"Owner not found in Pasta.html: {owner_name}")
+                            # Return with just the name
+                            return {
+                                'name': owner_name,
+                                'id': '',
+                                'file_path': '',
+                                'fullname': None,
+                                'access': 'owner',
+                                'migration_stage': None,
+                                'decision': None
+                            }
+                    except Exception as e:
+                        logger.warning(f"Error looking up owner '{owner_name}': {e}")
+                        return {
+                            'name': owner_name,
+                            'id': '',
+                            'file_path': '',
+                            'fullname': None,
+                            'access': 'owner',
+                            'migration_stage': None,
+                            'decision': None
+                        }
+    
+    return None
+
+
+def extract_access_control(soup: BeautifulSoup, pasta_index_path: Path, anchor: Optional[str] = None) -> List[Dict[str, Optional[str]]]:
+    """
+    Extract access control entries from report HTML.
+    
+    Args:
+        soup: BeautifulSoup object of report HTML
+        pasta_index_path: Path to Pasta.html for user/group lookup
+        anchor: Report anchor to restrict search to specific section
+        
+    Returns:
+        List of dicts with 'name', 'access', 'fullname', 'id', 'file_path'
+    """
+    access_entries = []
+    
+    # Find starting point (anchor or beginning)
+    start_element = soup
+    if anchor:
+        anchor_tag = soup.find('a', {'name': anchor})
+        if anchor_tag:
+            start_element = anchor_tag
+    
+    # Find "Controle de Acesso:" section starting from the anchor
+    rows_to_search = start_element.find_all_next('tr', valign="TOP", limit=100) if anchor else soup.find_all('tr', valign="TOP")
+    
+    for row in rows_to_search:
+        cells = row.find_all('td')
+        if len(cells) >= 2:
+            label_text = cells[0].get_text(strip=True)
+            if 'Controle de Acesso' in label_text:
+                # Found the access control section
+                # Look for nested table with USUÁRIO/OBJETO headers
+                nested_table = cells[1].find('table')
+                if nested_table:
+                    rows = nested_table.find_all('tr')
+                    # Skip header row
+                    for data_row in rows[1:]:
+                        data_cells = data_row.find_all('td')
+                        if len(data_cells) >= 2:
+                            user_cell = data_cells[0]
+                            access_cell = data_cells[1]
+                            
+                            # Extract user/group name (after &nbsp;)
+                            user_text = user_cell.get_text(strip=True)
+                            user_parts = user_text.split('&nbsp;')
+                            if len(user_parts) > 1:
+                                user_name = user_parts[1].strip()
+                            else:
+                                user_name = user_text.strip()
+                            
+                            # Extract access level
+                            access_level = access_cell.get_text(strip=True)
+                            
+                            if user_name and access_level:
+                                # Lookup in Pasta.html
+                                try:
+                                    resolver = LinkResolver(pasta_index_path, "User")
+                                    user_link = resolver.find_by_name(user_name)
+                                    
+                                    # If not found by exact name, try to find by ID in parentheses
+                                    # (e.g., search for "(7572142)" in link text)
+                                    if not user_link:
+                                        # Parse Pasta.html and search for links containing (user_name)
+                                        pasta_soup = parse_html_file(pasta_index_path)
+                                        for link in pasta_soup.find_all('a', class_='MAINBODY'):
+                                            link_text = link.get_text(strip=True)
+                                            # Check if link text contains (user_name) - for numeric IDs
+                                            if f"({user_name})" in link_text:
+                                                href = link.get('href', '')
+                                                if '#' in href:
+                                                    parts = href.split('#')
+                                                    user_link = {
+                                                        'name': link_text,
+                                                        'file': parts[0],
+                                                        'anchor': parts[1] if len(parts) > 1 else ''
+                                                    }
+                                                    break
+                                    
+                                    if user_link:
+                                        user_id = user_link.get('anchor', '')
+                                        file_path = f"{user_link['file']}#{user_id}" if user_id else user_link['file']
+                                        # Extract full name from link text (e.g., "Kauan Tinoco Alves (7572142)")
+                                        fullname = user_link.get('name', user_name)
+                                        access_entries.append({
+                                            'name': user_name,
+                                            'access': access_level,
+                                            'fullname': fullname,
+                                            'id': user_id,
+                                            'file_path': file_path
+                                        })
+                                    else:
+                                        logger.warning(f"User/group not found in Pasta.html: {user_name}")
+                                        # Add entry with limited info
+                                        access_entries.append({
+                                            'name': user_name,
+                                            'access': access_level,
+                                            'fullname': None,
+                                            'id': None,
+                                            'file_path': None
+                                        })
+                                except Exception as e:
+                                    logger.warning(f"Error looking up user/group '{user_name}': {e}")
+                                    access_entries.append({
+                                        'name': user_name,
+                                        'access': access_level,
+                                        'fullname': None,
+                                        'id': None,
+                                        'file_path': None
+                                    })
+                break
+    
+    return access_entries
 

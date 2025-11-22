@@ -9,7 +9,7 @@ __author__ = "MicroStrategy Extractor Team"
 # Re-export commonly used classes and functions for convenience
 from microstrategy_extractor.core.constants import (
     HTMLSections, HTMLClasses, ApplicationObjects, MetricTypes,
-    HTMLFiles, TableHeaders, RegexPatterns, CSVFiles
+    HTMLFiles, TableHeaders, RegexPatterns
 )
 from microstrategy_extractor.core.exceptions import (
     ExtractorError, ParsingError, MissingFileError, CircularReferenceError,
@@ -24,7 +24,7 @@ __all__ = [
     'Config',
     # Constants
     'HTMLSections', 'HTMLClasses', 'ApplicationObjects', 'MetricTypes',
-    'HTMLFiles', 'TableHeaders', 'RegexPatterns', 'CSVFiles',
+    'HTMLFiles', 'TableHeaders', 'RegexPatterns',
     # Exceptions
     'ExtractorError', 'ParsingError', 'MissingFileError', 'CircularReferenceError',
     'LinkResolutionError', 'ConfigurationError', 'ExportError', 'ValidationError',

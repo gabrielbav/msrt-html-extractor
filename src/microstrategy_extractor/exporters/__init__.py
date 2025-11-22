@@ -1,6 +1,6 @@
-"""Export modules for data output."""
+"""Data export modules."""
 
-from microstrategy_extractor.exporters.csv_exporter import CSVExporter
+from microstrategy_extractor.exporters.json_exporter import JSONExporter, export_to_json, print_summary
 
-__all__ = ['CSVExporter']
+__all__ = ['JSONExporter', 'export_to_json', 'print_summary']
 

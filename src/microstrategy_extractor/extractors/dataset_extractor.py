@@ -7,8 +7,8 @@ from bs4 import BeautifulSoup
 
 from microstrategy_extractor.extractors.base_extractor import BaseExtractor
 from microstrategy_extractor.core.models import DataSet
-from microstrategy_extractor.parsers.report_parser import resolve_dataset_link, is_report_dataset, extract_graphic_type
-from microstrategy_extractor.parsers.metric_parser import extract_template_objects, extract_template_objects_report
+from microstrategy_extractor.parsers.report_parser import resolve_dataset_link, is_report_dataset, extract_graphic_type, extract_template_objects_report
+from microstrategy_extractor.parsers.metric_parser import extract_template_objects
 from microstrategy_extractor.utils.logger import get_logger
 from microstrategy_extractor.core.constants import ApplicationObjects
 

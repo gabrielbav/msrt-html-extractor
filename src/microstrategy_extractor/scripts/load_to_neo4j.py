@@ -7,9 +7,17 @@ It uses MERGE operations to support both insert and update, preventing duplicate
 All data is linked to an Environment node for versioning and tracking.
 
 Usage:
+    # Load data
     python scripts/load_to_neo4j.py --json-file output.json --environment-id prod-2024 --environment-name "Production"
     python scripts/load_to_neo4j.py --json-file output.json --environment-id dev --environment-name "Development" --entities reports,datasets
     python scripts/load_to_neo4j.py --json-file output.json --environment-id test --environment-name "Test" --dry-run
+    
+    # Delete data by environment
+    python scripts/load_to_neo4j.py --environment-id prod-2024 --delete-environment
+    python scripts/load_to_neo4j.py --environment-id prod-2024 --delete-environment --dry-run
+    
+    # Delete data by report
+    python scripts/load_to_neo4j.py --environment-id prod-2024 --delete-report 8B2ED31E4C5E988B93B1C69081C7C66C
 """
 
 import os
@@ -661,6 +669,306 @@ class Neo4jDataLoader:
         print(f"  ✓ Loaded {total} composite metric relationships")
         return total
     
+    def load_users(self, reports: List[Dict]) -> int:
+        """Load User nodes and their access relationships to Reports."""
+        print(f"\n👤 Loading Users...")
+        
+        # Query to load User node
+        user_query = """
+        UNWIND $batch as row
+        MERGE (u:User {name: row.name})
+        ON CREATE SET u.created_at = datetime()
+        SET u.id = row.id,
+            u.fullname = row.fullname,
+            u.file_path = row.file_path,
+            u.updated_at = datetime()
+        
+        WITH u, row
+        MERGE (e:Environment {id: $env_id})
+        MERGE (u)-[rel:BELONGS_TO]->(e)
+        SET rel.loaded_at = datetime()
+        """
+        
+        # Query to load relationships with dynamic relationship type
+        relationship_query = """
+        UNWIND $batch as row
+        MATCH (u:User {name: row.user_name})
+        MATCH (r:Report {id: row.report_id})
+        CALL apoc.merge.relationship(u, row.access_type, {}, {loaded_at: datetime()}, r, {}) YIELD rel
+        RETURN rel
+        """
+        
+        # Fallback query if APOC is not available
+        relationship_query_fallback = """
+        UNWIND $batch as row
+        MATCH (u:User {name: row.user_name})
+        MATCH (r:Report {id: row.report_id})
+        WITH u, r, row
+        CALL {
+            WITH u, r, row
+            WITH u, r, row.access_type as relType
+            CALL apoc.create.relationship(u, relType, {loaded_at: datetime()}, r) YIELD rel
+            RETURN rel
+        }
+        RETURN rel
+        """
+        
+        user_batch = []
+        relationship_batch = []
+        total_users = 0
+        total_relationships = 0
+        users_seen = set()
+        
+        for report in reports:
+            report_id = report.get("id")
+            
+            # Process owner
+            owner = report.get("owner")
+            if owner:
+                user_name = owner.get("name")
+                if user_name and user_name not in users_seen:
+                    user_batch.append({
+                        "name": user_name,
+                        "id": owner.get("id"),
+                        "fullname": owner.get("fullname"),
+                        "file_path": owner.get("file_path")
+                    })
+                    users_seen.add(user_name)
+                    
+                    if len(user_batch) >= self.batch_size:
+                        count = self._execute_batch(user_query, user_batch, "Users")
+                        total_users += count
+                        self.stats["users"] += count
+                        user_batch = []
+                
+                # Create owner relationship
+                if user_name:
+                    access_type = owner.get("access", "owner").upper().replace(" ", "_")
+                    relationship_batch.append({
+                        "user_name": user_name,
+                        "report_id": report_id,
+                        "access_type": access_type
+                    })
+            
+            # Process access_control
+            for access_entry in report.get("access_control", []):
+                user_name = access_entry.get("name")
+                if user_name and user_name not in users_seen:
+                    user_batch.append({
+                        "name": user_name,
+                        "id": access_entry.get("id"),
+                        "fullname": access_entry.get("fullname"),
+                        "file_path": access_entry.get("file_path")
+                    })
+                    users_seen.add(user_name)
+                    
+                    if len(user_batch) >= self.batch_size:
+                        count = self._execute_batch(user_query, user_batch, "Users")
+                        total_users += count
+                        self.stats["users"] += count
+                        user_batch = []
+                
+                # Create access relationship
+                if user_name:
+                    access_type = access_entry.get("access", "").upper().replace(" ", "_")
+                    if access_type:
+                        relationship_batch.append({
+                            "user_name": user_name,
+                            "report_id": report_id,
+                            "access_type": access_type
+                        })
+        
+        # Process remaining user batches
+        if user_batch:
+            count = self._execute_batch(user_query, user_batch, "Users")
+            total_users += count
+            self.stats["users"] += count
+        
+        # Process relationships
+        # Try to use dynamic relationship creation
+        if relationship_batch:
+            if self.dry_run:
+                print(f"  [DRY RUN] Would create {len(relationship_batch)} user-report relationships")
+                total_relationships = len(relationship_batch)
+                self.stats["user_relationships"] += total_relationships
+            else:
+                # Process relationships one by one with dynamic type
+                print(f"  Creating {len(relationship_batch)} user-report access relationships...")
+                for rel_data in relationship_batch:
+                    query = f"""
+                    MATCH (u:User {{name: $user_name}})
+                    MATCH (r:Report {{id: $report_id}})
+                    MERGE (u)-[rel:{rel_data['access_type']}]->(r)
+                    SET rel.loaded_at = datetime()
+                    """
+                    try:
+                        with self.driver.session(database=self.database) as session:
+                            session.run(query, {
+                                "user_name": rel_data["user_name"],
+                                "report_id": rel_data["report_id"]
+                            })
+                        total_relationships += 1
+                        self.stats["user_relationships"] += 1
+                    except Exception as e:
+                        self.errors.append(f"User relationship ({rel_data['access_type']}): {e}")
+                        print(f"  ✗ Error creating relationship: {e}")
+        
+        print(f"  ✓ Loaded {total_users} users and {total_relationships} access relationships")
+        return total_users
+    
+    def delete_by_environment(self) -> bool:
+        """Delete all data associated with an environment."""
+        print(f"\n🗑️  Deleting data for Environment: {self.environment_name} ({self.environment_id})")
+        
+        if self.dry_run:
+            print("  [DRY RUN] Would delete all nodes and relationships for this environment")
+            return True
+        
+        # Count nodes before deletion
+        print("\n  Counting nodes to delete...")
+        try:
+            with self.driver.session(database=self.database) as session:
+                # Count all nodes belonging to this environment
+                result = session.run("""
+                    MATCH (n)-[:BELONGS_TO]->(e:Environment {id: $env_id})
+                    RETURN labels(n)[0] as label, count(n) as count
+                    ORDER BY count DESC
+                """, {"env_id": self.environment_id})
+                
+                total_nodes = 0
+                print("  Nodes to delete:")
+                for record in result:
+                    count = record["count"]
+                    total_nodes += count
+                    print(f"    {record['label']}: {count}")
+                
+                if total_nodes == 0:
+                    print(f"  ℹ️  No data found for environment: {self.environment_id}")
+                    return True
+                
+                # Delete all nodes and their relationships
+                print(f"\n  Deleting {total_nodes} nodes and their relationships...")
+                session.run("""
+                    MATCH (n)-[:BELONGS_TO]->(e:Environment {id: $env_id})
+                    DETACH DELETE n
+                """, {"env_id": self.environment_id})
+                
+                # Delete the environment node if it has no more relationships
+                session.run("""
+                    MATCH (e:Environment {id: $env_id})
+                    WHERE NOT (e)<-[:BELONGS_TO]-()
+                    DELETE e
+                """, {"env_id": self.environment_id})
+                
+                print(f"  ✓ Successfully deleted all data for environment: {self.environment_id}")
+                return True
+                
+        except Exception as e:
+            print(f"  ✗ Error deleting data: {e}")
+            return False
+    
+    def delete_by_report(self, report_id: str) -> bool:
+        """Delete a specific report and all its related data."""
+        print(f"\n🗑️  Deleting Report: {report_id}")
+        
+        if self.dry_run:
+            print("  [DRY RUN] Would delete report and all related nodes")
+            return True
+        
+        # Count nodes before deletion
+        print("\n  Counting nodes to delete...")
+        try:
+            with self.driver.session(database=self.database) as session:
+                # Count all nodes related to this report
+                result = session.run("""
+                    MATCH (r:Report {id: $report_id})
+                    OPTIONAL MATCH (r)-[*]->(n)
+                    WHERE NOT n:Environment
+                    RETURN labels(n)[0] as label, count(DISTINCT n) as count
+                    ORDER BY count DESC
+                """, {"report_id": report_id})
+                
+                total_nodes = 0
+                print("  Related nodes to delete:")
+                for record in result:
+                    if record["label"]:
+                        count = record["count"]
+                        total_nodes += count
+                        print(f"    {record['label']}: {count}")
+                
+                # Check if report exists
+                result = session.run("""
+                    MATCH (r:Report {id: $report_id})
+                    RETURN count(r) as count
+                """, {"report_id": report_id})
+                
+                report_count = result.single()["count"]
+                if report_count == 0:
+                    print(f"  ℹ️  Report not found: {report_id}")
+                    return True
+                
+                # Delete report and all related nodes
+                print(f"\n  Deleting report and {total_nodes} related nodes...")
+                
+                # Delete in order: from leaf nodes to report
+                # 1. Delete tables used by forms and facts
+                session.run("""
+                    MATCH (r:Report {id: $report_id})-[:CONTAINS]->(d:Dataset)
+                    OPTIONAL MATCH (d)-[:HAS_ATTRIBUTE]->(a:Attribute)-[:HAS_FORM]->(f:Form)-[:USES_TABLE]->(t:Table)
+                    OPTIONAL MATCH (d)-[:HAS_METRIC]->(m:Metric)-[:USES_FACT]->(fact:Fact)-[:READS_FROM]->(t2:Table)
+                    WITH collect(DISTINCT t) + collect(DISTINCT t2) as tables
+                    UNWIND tables as table
+                    DETACH DELETE table
+                """, {"report_id": report_id})
+                
+                # 2. Delete forms
+                session.run("""
+                    MATCH (r:Report {id: $report_id})-[:CONTAINS]->(d:Dataset)-[:HAS_ATTRIBUTE]->(a:Attribute)-[:HAS_FORM]->(f:Form)
+                    DETACH DELETE f
+                """, {"report_id": report_id})
+                
+                # 3. Delete facts and functions
+                session.run("""
+                    MATCH (r:Report {id: $report_id})-[:CONTAINS]->(d:Dataset)-[:HAS_METRIC]->(m:Metric)
+                    OPTIONAL MATCH (m)-[:USES_FACT]->(fact:Fact)
+                    OPTIONAL MATCH (m)-[:USES_FUNCTION]->(func:Function)
+                    DETACH DELETE fact, func
+                """, {"report_id": report_id})
+                
+                # 4. Delete metrics and attributes
+                session.run("""
+                    MATCH (r:Report {id: $report_id})-[:CONTAINS]->(d:Dataset)
+                    OPTIONAL MATCH (d)-[:HAS_METRIC]->(m:Metric)
+                    OPTIONAL MATCH (d)-[:HAS_ATTRIBUTE]->(a:Attribute)
+                    DETACH DELETE m, a
+                """, {"report_id": report_id})
+                
+                # 5. Delete datasets
+                session.run("""
+                    MATCH (r:Report {id: $report_id})-[:CONTAINS]->(d:Dataset)
+                    DETACH DELETE d
+                """, {"report_id": report_id})
+                
+                # 6. Delete user relationships to this report
+                session.run("""
+                    MATCH (u:User)-[rel]->(r:Report {id: $report_id})
+                    WHERE type(rel) <> 'BELONGS_TO'
+                    DELETE rel
+                """, {"report_id": report_id})
+                
+                # 7. Finally delete the report
+                session.run("""
+                    MATCH (r:Report {id: $report_id})
+                    DETACH DELETE r
+                """, {"report_id": report_id})
+                
+                print(f"  ✓ Successfully deleted report: {report_id}")
+                return True
+                
+        except Exception as e:
+            print(f"  ✗ Error deleting report: {e}")
+            return False
+    
     def load_data(self, json_file: Path, entities: List[str]) -> bool:
         """
         Load data from JSON file.
@@ -723,6 +1031,9 @@ class Neo4jDataLoader:
                 self.load_fact_tables(reports)
                 self.load_composite_metrics(reports)
             
+            if load_all or "users" in entities:
+                self.load_users(reports)
+            
             # Display statistics
             self._display_statistics()
             
@@ -746,9 +1057,57 @@ class Neo4jDataLoader:
         print("\n" + "=" * 70)
         print("📊 Loading Statistics")
         print("=" * 70)
+        print("\n🔄 Records Processed in This Batch:")
         
         for key, value in sorted(self.stats.items()):
             print(f"  {key.replace('_', ' ').title()}: {value}")
+        
+        # Show actual unique node counts in database
+        if not self.dry_run:
+            print("\n💾 Total Unique Nodes in Database:")
+            try:
+                with self.driver.session(database=self.database) as session:
+                    labels = ["Report", "Dataset", "Attribute", "Metric", "Fact", 
+                             "Function", "Table", "Form", "User"]
+                    
+                    for label in labels:
+                        result = session.run(f"MATCH (n:{label}) RETURN count(n) as count")
+                        count = result.single()["count"]
+                        print(f"  {label}: {count}")
+                    
+                    # Show user access relationship counts
+                    if self.stats.get("user_relationships", 0) > 0:
+                        print("\n🔐 User Access Relationships by Type:")
+                        result = session.run("""
+                            MATCH (u:User)-[r]->(rep:Report)
+                            WHERE type(r) <> 'BELONGS_TO'
+                            RETURN type(r) as access_type, count(r) as count
+                            ORDER BY count DESC
+                        """)
+                        for record in result:
+                            print(f"  {record['access_type']}: {record['count']}")
+                    
+                    # Check for duplicates
+                    print("\n🔍 Data Integrity Check:")
+                    has_duplicates = False
+                    
+                    for label in ["Report", "Dataset", "Attribute", "Metric", "Fact", "Table"]:
+                        result = session.run(f"""
+                            MATCH (n:{label})
+                            WITH n.id as id, count(*) as cnt
+                            WHERE cnt > 1
+                            RETURN count(*) as duplicates
+                        """)
+                        dup_count = result.single()["duplicates"]
+                        if dup_count > 0:
+                            print(f"  ⚠️  {label}: {dup_count} duplicate IDs found!")
+                            has_duplicates = True
+                    
+                    if not has_duplicates:
+                        print(f"  ✓ No duplicates found - MERGE working correctly")
+                        
+            except Exception as e:
+                print(f"  ✗ Error getting node counts: {e}")
         
         if self.errors:
             print(f"\n⚠️  Errors: {len(self.errors)}")
@@ -761,7 +1120,8 @@ class Neo4jDataLoader:
 def load_config_from_env() -> Dict[str, str]:
     """Load Neo4j configuration from environment variables."""
     if load_dotenv:
-        project_root = Path(__file__).parent.parent
+        # Go up 3 levels: scripts -> microstrategy_extractor -> src -> project_root
+        project_root = Path(__file__).parent.parent.parent.parent
         env_file = project_root / ".env"
         if env_file.exists():
             load_dotenv(env_file)
@@ -781,7 +1141,6 @@ def main():
     )
     parser.add_argument(
         "--json-file",
-        required=True,
         type=Path,
         help="Path to JSON file (e.g., output.json)"
     )
@@ -792,13 +1151,21 @@ def main():
     )
     parser.add_argument(
         "--environment-name",
-        required=True,
         help="Environment name (e.g., 'Production', 'Development')"
+    )
+    parser.add_argument(
+        "--delete-environment",
+        action="store_true",
+        help="Delete all data for the specified environment-id"
+    )
+    parser.add_argument(
+        "--delete-report",
+        help="Delete a specific report by report-id"
     )
     parser.add_argument(
         "--entities",
         default="all",
-        help="Comma-separated list of entities to load: all, reports, datasets, attributes, metrics, facts, tables (default: all)"
+        help="Comma-separated list of entities to load: all, reports, datasets, attributes, metrics, facts, tables, users (default: all)"
     )
     parser.add_argument(
         "--batch-size",
@@ -830,19 +1197,37 @@ def main():
     
     args = parser.parse_args()
     
-    # Validate JSON file
-    if not args.json_file.exists():
-        print(f"✗ Error: JSON file not found: {args.json_file}")
-        sys.exit(1)
+    # Check if this is a delete operation
+    is_delete_operation = args.delete_environment or args.delete_report
     
-    # Parse entities
-    entities = [e.strip().lower() for e in args.entities.split(",")]
-    valid_entities = {"all", "reports", "datasets", "attributes", "metrics", "facts", "tables"}
-    invalid = set(entities) - valid_entities
-    if invalid:
-        print(f"✗ Error: Invalid entities: {', '.join(invalid)}")
-        print(f"Valid entities: {', '.join(valid_entities)}")
-        sys.exit(1)
+    # Validate arguments based on operation type
+    if not is_delete_operation:
+        # Loading data requires json-file and environment-name
+        if not args.json_file:
+            print("✗ Error: --json-file is required for loading data")
+            sys.exit(1)
+        if not args.environment_name:
+            print("✗ Error: --environment-name is required for loading data")
+            sys.exit(1)
+        if not args.json_file.exists():
+            print(f"✗ Error: JSON file not found: {args.json_file}")
+            sys.exit(1)
+    else:
+        # Delete operations only require environment-id (and optionally environment-name for display)
+        if not args.environment_name:
+            args.environment_name = args.environment_id
+    
+    # Parse entities (only needed for loading)
+    if not is_delete_operation:
+        entities = [e.strip().lower() for e in args.entities.split(",")]
+        valid_entities = {"all", "reports", "datasets", "attributes", "metrics", "facts", "tables", "users"}
+        invalid = set(entities) - valid_entities
+        if invalid:
+            print(f"✗ Error: Invalid entities: {', '.join(invalid)}")
+            print(f"Valid entities: {', '.join(valid_entities)}")
+            sys.exit(1)
+    else:
+        entities = []
     
     # Load configuration
     config = load_config_from_env()
@@ -857,7 +1242,7 @@ def main():
     if args.database:
         config["database"] = args.database
     
-    # Create loader and load data
+    # Create loader
     loader = Neo4jDataLoader(
         uri=config["uri"],
         user=config["user"],
@@ -869,8 +1254,53 @@ def main():
         dry_run=args.dry_run
     )
     
-    success = loader.load_data(args.json_file, entities)
-    sys.exit(0 if success else 1)
+    # Execute operation based on arguments
+    if args.delete_environment:
+        # Delete all data for the environment
+        print("=" * 70)
+        print("Neo4j Data Deletion - By Environment")
+        print("=" * 70)
+        print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Environment: {args.environment_name} ({args.environment_id})")
+        if args.dry_run:
+            print("⚠️  DRY RUN MODE - No data will be deleted")
+        print("=" * 70)
+        
+        if not loader.connect():
+            sys.exit(1)
+        
+        try:
+            success = loader.delete_by_environment()
+        finally:
+            loader.close()
+        
+        sys.exit(0 if success else 1)
+        
+    elif args.delete_report:
+        # Delete specific report
+        print("=" * 70)
+        print("Neo4j Data Deletion - By Report")
+        print("=" * 70)
+        print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Report ID: {args.delete_report}")
+        if args.dry_run:
+            print("⚠️  DRY RUN MODE - No data will be deleted")
+        print("=" * 70)
+        
+        if not loader.connect():
+            sys.exit(1)
+        
+        try:
+            success = loader.delete_by_report(args.delete_report)
+        finally:
+            loader.close()
+        
+        sys.exit(0 if success else 1)
+        
+    else:
+        # Load data
+        success = loader.load_data(args.json_file, entities)
+        sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":

@@ -107,28 +107,6 @@ class Encodings:
     FALLBACK = 'utf-8'
 
 
-class CSVFiles:
-    """Output CSV file names."""
-    REPORTS = "Reports.csv"
-    DATASETS = "DataSets.csv"
-    ATTRIBUTES = "Attributes.csv"
-    ATTRIBUTES_FORM = "AttributesForm.csv"
-    FUNCTIONS = "Functions.csv"
-    METRICS = "Metrics.csv"
-    FACTS = "Facts.csv"
-    TABLES = "Tables.csv"
-    
-    # Relationship files
-    REPORT_DATASET = "Report_DataSet.csv"
-    DATASET_ATTRIBUTE = "DataSet_Attribute.csv"
-    DATASET_METRIC = "DataSet_Metric.csv"
-    ATTRIBUTE_FORM_TABLE = "AttributeForm_Table.csv"
-    METRIC_FUNCTION = "Metric_Function.csv"
-    METRIC_FACT = "Metric_Fact.csv"
-    FACT_TABLE = "Fact_Table.csv"
-    METRIC_METRIC = "Metric_Metric.csv"
-
-
 class LogLevels:
     """Logging level constants."""
     DEBUG = "DEBUG"

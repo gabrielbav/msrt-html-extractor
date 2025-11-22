@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 
 from microstrategy_extractor.parsers.base_parser import find_object_section, parse_html_file
 from microstrategy_extractor.parsers.link_resolver import LinkResolver
-from microstrategy_extractor.utils.text_normalizer import TextNormalizer
+from microstrategy_extractor.utils.text_normalizer import TextNormalizer, normalize_for_comparison
 from microstrategy_extractor.utils.logger import get_logger
 from microstrategy_extractor.core.constants import HTMLClasses, RegexPatterns, TableHeaders
 from microstrategy_extractor.core.exceptions import ParsingError, MissingSectionError
@@ -39,10 +39,10 @@ def _find_expressions_section(anchor_tag: BeautifulSoup) -> Optional[BeautifulSo
     
     while current and attempts < max_attempts:
         header_text = current.get_text(strip=True).upper()
-        header_norm = TextNormalizer.for_comparison(header_text)
+        header_norm = normalize_for_comparison(header_text)
         
         # Check if this is the EXPRESSÕES section
-        if TableHeaders.EXPRESSOES.upper() in header_text or 'EXPRESS' in header_norm:
+        if 'EXPRESS' in header_norm:
             return current
         
         # Move to next SECTIONHEADER table

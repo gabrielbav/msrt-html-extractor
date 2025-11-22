@@ -11,6 +11,10 @@ class Relatorio:
     id: str
     file_path: str
     datasets: List['DataSet'] = field(default_factory=list)
+    migration_stage: Optional[str] = None
+    decision: Optional[str] = None
+    owner: Optional['Owner'] = None
+    access_control: List['AccessControlEntry'] = field(default_factory=list)
 
 
 @dataclass
@@ -24,6 +28,8 @@ class DataSet:
     graphic: Optional[str] = None  # Graph type for Report datasets (e.g., "Barra Vertical")
     atributos: List['Atributo'] = field(default_factory=list)
     metricas: List['Metrica'] = field(default_factory=list)
+    migration_stage: Optional[str] = None
+    decision: Optional[str] = None
 
 
 @dataclass
@@ -33,13 +39,18 @@ class LogicTable:
     id: str
     file_path: Optional[str] = None
     column_name: Optional[str] = None  # Column name from EXPRESSÃO field
+    migration_stage: Optional[str] = None
+    decision: Optional[str] = None
 
 
 @dataclass
 class Formulario:
     """Represents an attribute form."""
+    id: str  # Generated ID (hash of attribute_id + form_name)
     name: str  # Form name (e.g., "ID", "Codigo Agência", "Nome Agência")
     logic_tables: List['LogicTable'] = field(default_factory=list)  # Source tables for this form
+    migration_stage: Optional[str] = None
+    decision: Optional[str] = None
 
 
 @dataclass
@@ -52,13 +63,18 @@ class Atributo:
     dataset_id: str
     applicationSchema: Optional[str] = None  # "Atributo" when found in Atributo.html
     formularios: List[Formulario] = field(default_factory=list)  # Attribute forms with their source tables
+    migration_stage: Optional[str] = None
+    decision: Optional[str] = None
 
 
 @dataclass
 class Function:
     """Represents a function."""
     name: str
+    id: str
     file_path: str
+    migration_stage: Optional[str] = None
+    decision: Optional[str] = None
 
 
 @dataclass
@@ -68,6 +84,8 @@ class Fact:
     id: str
     file_path: str
     logic_tables: List[LogicTable] = field(default_factory=list)  # Source tables from EXPRESSÕES section
+    migration_stage: Optional[str] = None
+    decision: Optional[str] = None
 
 
 @dataclass
@@ -83,6 +101,8 @@ class Metrica:
     function: Optional[Function] = None  # Function object (when tipo = simples)
     fact: Optional[Fact] = None  # Fact object (when tipo = simples)
     metricas: List['Metrica'] = field(default_factory=list)  # Component metrics (when tipo = composto)
+    migration_stage: Optional[str] = None
+    decision: Optional[str] = None
 
 
 @dataclass
@@ -90,6 +110,30 @@ class MetricaRelacao:
     """Represents a relationship between composite and component metrics."""
     parent_metrica_id: str
     child_metrica_id: str
+
+
+@dataclass
+class Owner:
+    """Represents an owner (user)."""
+    name: str
+    id: str
+    file_path: str
+    fullname: Optional[str] = None
+    access: Optional[str] = None
+    migration_stage: Optional[str] = None
+    decision: Optional[str] = None
+
+
+@dataclass
+class AccessControlEntry:
+    """Represents an access control entry."""
+    name: str
+    access: str
+    fullname: Optional[str] = None
+    id: Optional[str] = None
+    migration_stage: Optional[str] = None
+    decision: Optional[str] = None
+    file_path: Optional[str] = None
 
 
 @dataclass

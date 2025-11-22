@@ -1,7 +1,8 @@
 """Attribute extraction logic."""
 
+import hashlib
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 
 from microstrategy_extractor.extractors.base_extractor import BaseExtractor
 from microstrategy_extractor.core.models import Atributo, Formulario, LogicTable
@@ -71,8 +72,12 @@ class AttributeExtractor(BaseExtractor):
         formularios = []
         for form_data in forms_data:
             logic_tables = self._resolve_form_logic_tables(form_data)
+            form_name = form_data.get('name', '')
+            # Generate deterministic ID from attribute_id + form_name
+            form_id = hashlib.md5(f"{attr_id}_{form_name}".encode()).hexdigest().upper()
             formulario = Formulario(
-                name=form_data.get('name', ''),
+                id=form_id,
+                name=form_name,
                 logic_tables=logic_tables
             )
             formularios.append(formulario)

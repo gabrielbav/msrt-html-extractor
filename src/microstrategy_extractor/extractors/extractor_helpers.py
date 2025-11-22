@@ -4,10 +4,8 @@ from typing import Optional, Set, List, Dict
 from pathlib import Path
 
 from microstrategy_extractor.core.models import Metrica, Function, Fact, LogicTable
-from microstrategy_extractor.legacy.html_parser import (
-    extract_metric_definition, find_metric_link, find_function_link, 
-    find_fact_link, find_logical_table_link, extract_fact_logic_tables
-)
+from microstrategy_extractor.parsers.metric_parser import extract_metric_definition, find_metric_link
+from microstrategy_extractor.parsers.fact_parser import find_function_link, find_fact_link, find_logical_table_link, extract_fact_logic_tables
 from microstrategy_extractor.utils.logger import get_logger
 from microstrategy_extractor.core.exceptions import CircularReferenceError
 
@@ -109,6 +107,7 @@ def extract_simple_metric_components(metrica: Metrica, definition: Dict,
             function_file_path = f"{function_link['file']}#{function_link['anchor']}" if function_link.get('anchor') else function_link['file']
             metrica.function = Function(
                 name=function_link['name'],
+                id=function_id,
                 file_path=function_file_path
             )
         else:

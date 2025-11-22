@@ -1,16 +1,17 @@
 """Main report extractor coordinating all extraction strategies."""
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 from microstrategy_extractor.extractors.base_extractor import BaseExtractor
 from microstrategy_extractor.extractors.dataset_extractor import DatasetExtractor
 from microstrategy_extractor.extractors.attribute_extractor import AttributeExtractor
 from microstrategy_extractor.extractors.metric_extractor import MetricExtractor
-from microstrategy_extractor.core.models import Relatorio
-from microstrategy_extractor.parsers.report_parser import find_report_by_name, find_report_by_id, extract_report_links, extract_datasets_from_report
+from microstrategy_extractor.core.models import Relatorio, Owner, AccessControlEntry
+from microstrategy_extractor.parsers.report_parser import find_report_by_name, find_report_by_id, extract_report_links, extract_datasets_from_report, extract_owner, extract_access_control
 from microstrategy_extractor.parsers.attribute_parser import find_attribute_link
-from microstrategy_extractor.legacy.html_parser import find_metric_link
+from microstrategy_extractor.parsers.metric_parser import find_metric_link
+from microstrategy_extractor.parsers.base_parser import preload_common_files, preload_all_html_files, get_cache_stats
 from microstrategy_extractor.utils.logger import get_logger
 from microstrategy_extractor.cache import MemoryCache
 from microstrategy_extractor.config.settings import Config
@@ -50,6 +51,7 @@ class ReportExtractor(BaseExtractor):
         self.funcao_index_path = self.get_html_file_path('funcao')
         self.atributo_index_path = self.get_html_file_path('atributo')
         self.tabela_logica_index_path = self.get_html_file_path('tabela_logica')
+        self.pasta_index_path = base_path / "Pasta.html"
         
         # Legacy cache dicts (for backward compatibility)
         self._parsed_files = {}
@@ -103,26 +105,49 @@ class ReportExtractor(BaseExtractor):
         
         return self._extract_single_report(report_info)
     
-    def extract_all_reports(self) -> List[Relatorio]:
+    def extract_all_reports(self, aggressive_cache: bool = False, filter_names: List[str] = None) -> List[Relatorio]:
         """
-        Extract data model for all reports in Documento.html.
+        Extract data model for all reports in Documento.html with live progress display.
+        
+        Args:
+            aggressive_cache: If True, pre-load ALL HTML files into memory before extraction
+            filter_names: Optional list of report names to extract (if None, extracts all)
         
         Returns:
             List of all Relatorio objects
         """
+        # Pre-cache files if requested
+        if aggressive_cache:
+            preload_all_html_files(self.base_path)
+        else:
+            # Always pre-load common index files for better performance
+            preload_common_files(self.base_path)
+        
         reports_info = extract_report_links(self.documento_path)
+        
+        # Filter reports if filter_names provided
+        if filter_names:
+            reports_info = [r for r in reports_info if r['name'] in filter_names]
+            logger.info(f"Filtered to {len(reports_info)} reports matching filter")
+        
         relatorios = []
         
         logger.info(f"Found {len(reports_info)} reports to process")
         
-        for report_info in reports_info:
+        for i, report_info in enumerate(reports_info, 1):
             try:
-                extracted_reports = self.extract_report(report_info['name'])
-                if extracted_reports:
-                    relatorios.extend(extracted_reports)
+                logger.info(f"Processing report {i}/{len(reports_info)}: {report_info['name']}")
+                relatorio = self._extract_single_report(report_info)
+                if relatorio:
+                    relatorios.append(relatorio)
             except Exception as e:
                 logger.error(f"Error extracting report '{report_info['name']}': {e}")
                 continue
+        
+        # Log cache stats
+        cache_stats = get_cache_stats()
+        logger.info(f"Cache statistics: {cache_stats['hits']} hits, {cache_stats['misses']} misses, "
+                   f"{cache_stats['hit_rate']}% hit rate")
         
         return relatorios
     
@@ -148,8 +173,36 @@ class ReportExtractor(BaseExtractor):
             file_path=file_path_with_anchor
         )
         
-        # Extract datasets
+        # Extract report details
         soup = self.get_parsed_file(report_info['file'])
+        
+        # Extract owner (pass anchor to restrict search to this report)
+        owner_data = extract_owner(soup, self.pasta_index_path, report_id)
+        if owner_data:
+            relatorio.owner = Owner(
+                name=owner_data['name'],
+                id=owner_data['id'],
+                file_path=owner_data['file_path'],
+                fullname=owner_data.get('fullname'),
+                access=owner_data.get('access'),
+                migration_stage=owner_data.get('migration_stage'),
+                decision=owner_data.get('decision')
+            )
+        
+        # Extract access control (pass anchor to restrict search to this report)
+        access_control_data = extract_access_control(soup, self.pasta_index_path, report_id)
+        for ac_data in access_control_data:
+            relatorio.access_control.append(
+                AccessControlEntry(
+                    name=ac_data['name'],
+                    access=ac_data['access'],
+                    fullname=ac_data.get('fullname'),
+                    id=ac_data.get('id'),
+                    file_path=ac_data.get('file_path')
+                )
+            )
+        
+        # Extract datasets
         anchor = report_info.get('anchor', '').split('#')[-1] if '#' in report_info.get('anchor', '') else report_info.get('anchor', '')
         datasets_info = extract_datasets_from_report(soup, report_info['name'], anchor)
         

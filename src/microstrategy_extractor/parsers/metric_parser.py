@@ -7,7 +7,7 @@ from pathlib import Path
 
 from microstrategy_extractor.parsers.base_parser import find_object_section, parse_html_file
 from microstrategy_extractor.parsers.link_resolver import LinkResolver
-from microstrategy_extractor.utils.text_normalizer import TextNormalizer
+from microstrategy_extractor.utils.text_normalizer import TextNormalizer, normalize_for_comparison
 from microstrategy_extractor.utils.logger import get_logger
 from microstrategy_extractor.core.constants import HTMLSections, HTMLClasses, RegexPatterns, HTMLImages, TableHeaders
 from microstrategy_extractor.core.exceptions import ParsingError
@@ -35,6 +35,7 @@ def _find_definition_section(soup: BeautifulSoup, object_name: str,
     # First, try to find the object section
     section = find_object_section(soup, object_name, anchor)
     search_area = section if section else soup
+    logger.debug(f"_find_definition_section: search_area={'object_section' if section else 'full_soup'}")
     
     # If anchor is provided, find the anchor first
     anchor_tag = None
@@ -42,23 +43,34 @@ def _find_definition_section(soup: BeautifulSoup, object_name: str,
         anchor_tag = search_area.find('a', {'name': anchor})
         if not anchor_tag:
             anchor_tag = soup.find('a', {'name': anchor})
+        logger.debug(f"Anchor tag found: {anchor_tag is not None}")
     
     # Find all DEFINIÇÃO sections
     def_sections = []
     for table in search_area.find_all('table', class_=HTMLClasses.SECTIONHEADER):
-        header_text = table.get_text(strip=True).upper()
-        if HTMLSections.DEFINICAO_NORM in header_text:
+        header_text = table.get_text(strip=True)
+        # Normalize for comparison (remove accents)
+        header_text_norm = normalize_for_comparison(header_text)
+        if HTMLSections.DEFINICAO_NORM in header_text_norm:
             def_sections.append(table)
+            logger.debug(f"Found DEFINIÇÃO section in search_area: {header_text[:50]}")
     
     # If no sections found in search_area, search entire document
     if not def_sections:
+        logger.debug("No DEFINIÇÃO in search_area, searching full document")
         for table in soup.find_all('table', class_=HTMLClasses.SECTIONHEADER):
-            header_text = table.get_text(strip=True).upper()
-            if HTMLSections.DEFINICAO_NORM in header_text:
+            header_text = table.get_text(strip=True)
+            # Normalize for comparison (remove accents)
+            header_text_norm = normalize_for_comparison(header_text)
+            if HTMLSections.DEFINICAO_NORM in header_text_norm:
                 def_sections.append(table)
+                logger.debug(f"Found DEFINIÇÃO section in full soup: {header_text[:50]}")
+    
+    logger.debug(f"Total DEFINIÇÃO sections found: {len(def_sections)}")
     
     # If we have an anchor, find the DEFINIÇÃO section that comes after it
     if anchor_tag and def_sections:
+        logger.debug("Searching for DEFINIÇÃO after anchor")
         # Find the first DEFINIÇÃO after the anchor in document order
         for elem in soup.descendants:
             if elem == anchor_tag:
@@ -67,15 +79,19 @@ def _find_definition_section(soup: BeautifulSoup, object_name: str,
                 while current:
                     current = current.find_next()
                     if current and current.name == 'table' and HTMLClasses.SECTIONHEADER in str(current.get('class', [])):
-                        header_text = current.get_text(strip=True).upper()
-                        if HTMLSections.DEFINICAO_NORM in header_text:
+                        header_text = current.get_text(strip=True)
+                        header_text_norm = normalize_for_comparison(header_text)
+                        if HTMLSections.DEFINICAO_NORM in header_text_norm:
+                            logger.debug(f"Returning DEFINIÇÃO after anchor")
                             return current
                 break
     
     # If no target found yet, use the first DEFINIÇÃO
     if def_sections:
+        logger.debug(f"Returning first DEFINIÇÃO section")
         return def_sections[0]
     
+    logger.warning(f"No DEFINIÇÃO section found for '{object_name}'")
     return None
 
 
@@ -299,10 +315,11 @@ def extract_metric_definition(soup: BeautifulSoup, object_name: str,
         Dict with 'tipo', 'formula', 'function_id', 'fact_id', 'child_metric_ids'
     """
     # Find DEFINIÇÃO section
+    logger.debug(f"extract_metric_definition: object_name={object_name}, anchor={anchor}")
     target_section = _find_definition_section(soup, object_name, anchor)
     
     if not target_section:
-        logger.debug("DEFINIÇÃO section not found")
+        logger.warning(f"DEFINIÇÃO section not found for metric '{object_name}' (anchor={anchor})")
         return {
             'tipo': 'simples',
             'formula': None,
@@ -311,18 +328,23 @@ def extract_metric_definition(soup: BeautifulSoup, object_name: str,
             'child_metric_ids': []
         }
     
+    logger.debug(f"Found DEFINIÇÃO section for '{object_name}'")
+    
     # Extract type
     tipo = _extract_metric_type_from_section(target_section)
     if not tipo:
         tipo = 'simples'
+    logger.debug(f"Extracted tipo='{tipo}' for metric '{object_name}'")
     
     # Extract formula components
     formula, function_id, fact_id = _extract_formula_components(target_section)
+    logger.debug(f"Extracted formula components for '{object_name}': formula={formula}, function_id={function_id}, fact_id={fact_id}")
     
     # For composite metrics, extract child metric IDs
     child_metric_ids = []
     if tipo == 'composto':
         child_metric_ids = _extract_child_metric_ids(target_section, anchor, soup)
+        logger.debug(f"Extracted {len(child_metric_ids)} child metrics for composite metric '{object_name}'")
     
     return {
         'tipo': tipo,
@@ -521,4 +543,77 @@ def extract_template_objects(soup: BeautifulSoup, object_name: str,
                 metricas = _extract_colunas_metrics(data_row, seen_metric_ids)
     
     return atributos, metricas
+
+
+def find_metric_link(metrica_index_path: Path, metric_name: str, metric_id: Optional[str] = None) -> Optional[Dict[str, str]]:
+    """Find a metric link in Métrica.html index.
+    
+    Args:
+        metrica_index_path: Path to Métrica.html
+        metric_name: Name of the metric
+        metric_id: Optional ID from HREF [$$$$ID$$$$] format for exact matching
+    
+    Returns:
+        Dict with name, file, anchor, and href, or None if not found
+    """
+    if not metrica_index_path.exists():
+        return None
+    
+    soup = parse_html_file(metrica_index_path)
+    
+    # First, try to find by ID if provided (most accurate)
+    if metric_id:
+        for link in soup.find_all('a', class_='MAINBODY'):
+            href = link.get('href', '')
+            # Check if anchor matches the ID
+            parts = href.split('#')
+            anchor = parts[1] if len(parts) > 1 else ''
+            if anchor.upper() == metric_id.upper():
+                # Use the name directly from HTML - it already has correct encoding
+                link_name = link.get_text(strip=True)
+                return {
+                    'name': link_name,  # Official name from Métrica.html with correct accents
+                    'file': parts[0] if parts else '',
+                    'anchor': anchor,
+                    'href': href
+                }
+    
+    # Fallback: search by name (with accent normalization)
+    import unicodedata
+    def normalize_text(text):
+        text = unicodedata.normalize('NFKD', text)
+        text = ''.join(c for c in text if not unicodedata.combining(c))
+        return text.lower().strip()
+    
+    metric_name_norm = normalize_text(metric_name)
+    
+    for link in soup.find_all('a', class_='MAINBODY'):
+        link_text = link.get_text(strip=True)
+        link_text_norm = normalize_text(link_text)
+        
+        # Try exact match first
+        if link_text_norm == metric_name_norm:
+            href = link.get('href', '')
+            parts = href.split('#')
+            # Use the name directly from HTML - it already has correct encoding
+            return {
+                'name': link_text,  # Official name from Métrica.html with correct accents
+                'file': parts[0] if parts else '',
+                'anchor': parts[1] if len(parts) > 1 else '',
+                'href': href
+            }
+        
+        # Try partial match
+        if metric_name_norm in link_text_norm or link_text_norm in metric_name_norm:
+            href = link.get('href', '')
+            parts = href.split('#')
+            # Use the name directly from HTML - it already has correct encoding
+            return {
+                'name': link_text,  # Official name from Métrica.html with correct accents
+                'file': parts[0] if parts else '',
+                'anchor': parts[1] if len(parts) > 1 else '',
+                'href': href
+            }
+    
+    return None
 

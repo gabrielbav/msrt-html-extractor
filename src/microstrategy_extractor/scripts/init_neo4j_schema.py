@@ -334,7 +334,8 @@ def load_config_from_env() -> Dict[str, str]:
     """
     # Try to load .env file if dotenv is available
     if load_dotenv:
-        project_root = Path(__file__).parent.parent
+        # Go up 3 levels: scripts -> microstrategy_extractor -> src -> project_root
+        project_root = Path(__file__).parent.parent.parent.parent
         env_file = project_root / ".env"
         if env_file.exists():
             load_dotenv(env_file)

@@ -16,7 +16,6 @@ class Config:
     
     # Output paths
     output_json_path: Optional[Path] = None
-    output_csv_dir: Optional[Path] = None
     
     # Cache settings
     cache_enabled: bool = True
@@ -56,7 +55,6 @@ class Config:
         return cls(
             base_path=Path(os.getenv("BASE_PATH", "RAW_DATA")),
             output_json_path=Path(os.getenv("OUTPUT_JSON", "output.json")) if os.getenv("OUTPUT_JSON") else None,
-            output_csv_dir=Path(os.getenv("OUTPUT_CSV_DIR", "output_csv")) if os.getenv("OUTPUT_CSV_DIR") else None,
             cache_enabled=os.getenv("CACHE_ENABLED", "true").lower() == "true",
             cache_size_limit=int(os.getenv("CACHE_SIZE_LIMIT", "1000")),
             log_level=os.getenv("LOG_LEVEL", LogLevels.INFO),
@@ -79,7 +77,6 @@ class Config:
         return cls(
             base_path=Path(args.base_path),
             output_json_path=Path(args.output_json) if hasattr(args, 'output_json') and args.output_json else None,
-            output_csv_dir=Path(args.output_csv_dir) if hasattr(args, 'output_csv_dir') and args.output_csv_dir else None,
             verbose=getattr(args, 'verbose', False),
             log_level=LogLevels.DEBUG if getattr(args, 'verbose', False) else LogLevels.INFO,
         )

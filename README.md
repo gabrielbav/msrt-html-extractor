@@ -152,34 +152,39 @@ if errors:
 
 #### Main CLI Commands
 
+**Extract all reports using the variables from .env:**
+```bash
+python mstr-extractor.py
+```
+
 **Extract all reports:**
 ```bash
-python main.py --base-path <path> --output-json output.json
+python mstr-extractor.py --base-path <path> --output-json output.json
 ```
 
 **Extract specific report by name:**
 ```bash
-python main.py --base-path <path> --report "Report Name" --output-json output.json
+python mstr-extractor.py --base-path <path> --report "Report Name" --output-json output.json
 ```
 
 **Extract report by ID:**
 ```bash
-python main.py --base-path <path> --report-id "ABC123..." --output-json output.json
+python mstr-extractor.py --base-path <path> --report-id "ABC123..." --output-json output.json
 ```
 
 **Filter reports by pattern:**
 ```bash
-python main.py --base-path <path> --filter "Boletim" --output-json output.json
+python mstr-extractor.py --base-path <path> --filter "Boletim" --output-json output.json
 ```
 
 **Enable verbose logging (debug mode):**
 ```bash
-python main.py --base-path <path> --output-json output.json --verbose
+python mstr-extractor.py --base-path <path> --output-json output.json --verbose
 ```
 
 **Use aggressive caching (faster, more RAM):**
 ```bash
-python main.py --base-path <path> --output-json output.json --aggressive-cache
+python mstr-extractor.py --base-path <path> --output-json output.json --aggressive-cache
 ```
 
 #### Script Commands
@@ -200,20 +205,53 @@ python -m microstrategy_extractor.scripts.load_to_neo4j \
   --environment-name "Production"
 ```
 
+**Delete data by environment:**
+```bash
+python -m microstrategy_extractor.scripts.load_to_neo4j \
+  --environment-id prod-2024 \
+  --delete-environment
+```
+
+**Delete data by report:**
+```bash
+python -m microstrategy_extractor.scripts.load_to_neo4j \
+  --environment-id prod-2024 \
+  --delete-report <REPORT_ID>
+```
+
+**Reset entire database (delete all data, constraints, and indexes):**
+```bash
+# Interactive mode (safest - requires confirmation)
+python -m microstrategy_extractor.scripts.reset_neo4j
+
+# Preview without executing
+python -m microstrategy_extractor.scripts.reset_neo4j --dry-run
+
+# Force reset without confirmation (use with caution!)
+python -m microstrategy_extractor.scripts.reset_neo4j --force
+```
+
 #### Full Example
 
 ```bash
 # 1. Extract all reports to JSON
-python main.py \
+python mstr-extractor.py \
   --base-path "RAW_DATA/04 - Relatórios Gerenciais - BARE (20250519221644)" \
   --output-json output.json \
   --verbose
 
-# 2. Load to Neo4j (optional)
+# 2. Initialize Neo4j schema (first time only)
+python -m microstrategy_extractor.scripts.init_neo4j_schema
+
+# 3. Load to Neo4j
 python -m microstrategy_extractor.scripts.load_to_neo4j \
   --json-file output.json \
   --environment-id prod-2024-11 \
   --environment-name "Production"
+
+# 4. Reset database if needed (⚠️  WARNING: Deletes everything!)
+python -m microstrategy_extractor.scripts.reset_neo4j --dry-run  # Preview first
+python -m microstrategy_extractor.scripts.reset_neo4j             # Execute with confirmation
 ```
 
 #### Python API Usage
@@ -315,7 +353,7 @@ microstrategy-extractor/
 │           └── json_exporter.py           # JSON export functionality
 │
 ├── docker-compose.yml                     # Neo4j Docker setup
-├── main.py                                # Main CLI entry point
+├── mstr-extractor.py                      # Main CLI entry point
 ├── requirements.txt                       # Python dependencies
 └── README.md                              # This file
 ```

@@ -2,8 +2,13 @@
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add src to path if package is not installed
 try:
@@ -28,14 +33,20 @@ def setup_logging(verbose: bool = False):
 
 def main():
     """Main entry point."""
+    # Get environment variables with defaults
+    env_base_path = os.getenv('BASE_PATH', '').strip('"').strip("'")
+    env_output_json = os.getenv('OUTPUT_JSON', '').strip('"').strip("'")
+    env_verbose = os.getenv('VERBOSE', 'false').lower() == 'true'
+    
     parser = argparse.ArgumentParser(
         description='Extract report data model from MicroStrategy HTML documentation'
     )
     parser.add_argument(
         '--base-path',
         type=str,
-        required=True,
-        help='Path to directory containing HTML files (e.g., RAW_DATA/04 - Relatórios Gerenciais - BARE (20250519221644))'
+        default=env_base_path or None,
+        required=not env_base_path,
+        help=f'Path to directory containing HTML files (default: {env_base_path or "not set - required"})'
     )
     parser.add_argument(
         '--report',
@@ -50,12 +61,14 @@ def main():
     parser.add_argument(
         '--output-json',
         type=str,
-        help='Output JSON file path'
+        default=env_output_json or None,
+        help=f'Output JSON file path (default: {env_output_json or "not set"})'
     )
     parser.add_argument(
         '--verbose', '-v',
         action='store_true',
-        help='Enable verbose logging'
+        default=env_verbose,
+        help=f'Enable verbose logging (default: {env_verbose})'
     )
     parser.add_argument(
         '--filter',

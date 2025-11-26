@@ -37,6 +37,7 @@ def main():
     env_base_path = os.getenv('BASE_PATH', '').strip('"').strip("'")
     env_output_json = os.getenv('OUTPUT_JSON', '').strip('"').strip("'")
     env_verbose = os.getenv('VERBOSE', 'false').lower() == 'true'
+    env_locale = os.getenv('LOCALE', os.getenv('I18N_LOCALE', 'pt-BR')).strip('"').strip("'")
     
     parser = argparse.ArgumentParser(
         description='Extract report data model from MicroStrategy HTML documentation'
@@ -80,20 +81,36 @@ def main():
         action='store_true',
         help='Pre-load ALL HTML files into memory (uses 4-8GB RAM but 2-3x faster)'
     )
+    parser.add_argument(
+        '--locale',
+        type=str,
+        default=env_locale,
+        help=f'Locale for HTML parsing (e.g., pt-BR, en-US). Default: {env_locale}'
+    )
     
     args = parser.parse_args()
     
+    # Initialize logging first
     setup_logging(args.verbose)
     logger = logging.getLogger(__name__)
+    
+    # Then initialize locale
+    from microstrategy_extractor.i18n import set_locale_by_code, get_locale
+    try:
+        set_locale_by_code(args.locale)
+        logger.info(f"Using locale: {args.locale}")
+    except ValueError as e:
+        logger.error(f"Invalid locale: {e}")
+        sys.exit(1)
     
     base_path = Path(args.base_path)
     if not base_path.exists():
         logger.error(f"Base path does not exist: {base_path}")
         sys.exit(1)
     
-    documento_path = base_path / "Documento.html"
+    documento_path = base_path / get_locale().html_files.documento
     if not documento_path.exists():
-        logger.error(f"Documento.html not found in: {base_path}")
+        logger.error(f"{get_locale().html_files.documento} not found in: {base_path}")
         sys.exit(1)
     
     logger.info(f"Configuration: aggressive_cache={'enabled' if args.aggressive_cache else 'disabled'}")

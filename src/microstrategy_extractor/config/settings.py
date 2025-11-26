@@ -31,18 +31,12 @@ class Config:
     parallel_enabled: bool = False
     max_workers: int = 4
     
-    # HTML file names (for override if needed)
-    html_files: dict = field(default_factory=lambda: {
-        'documento': 'Documento.html',
-        'relatorio': 'Relatório.html',
-        'cubo_inteligente': 'CuboInteligente.html',
-        'atalho': 'Atalho.html',
-        'metrica': 'Métrica.html',
-        'fato': 'Fato.html',
-        'funcao': 'Função.html',
-        'atributo': 'Atributo.html',
-        'tabela_logica': 'TabelaLógica.html',
-    })
+    # Internationalization settings
+    locale_code: str = "pt-BR"
+    
+    # DEPRECATED: This field is no longer used. File names come from i18n locale.
+    # Kept for backward compatibility only. Set to None by default.
+    html_files: Optional[dict] = None
     
     @classmethod
     def from_env(cls) -> 'Config':
@@ -61,6 +55,7 @@ class Config:
             verbose=os.getenv("VERBOSE", "false").lower() == "true",
             parallel_enabled=os.getenv("PARALLEL_ENABLED", "false").lower() == "true",
             max_workers=int(os.getenv("MAX_WORKERS", "4")),
+            locale_code=os.getenv("LOCALE", os.getenv("I18N_LOCALE", "pt-BR")),
         )
     
     @classmethod
@@ -79,11 +74,12 @@ class Config:
             output_json_path=Path(args.output_json) if hasattr(args, 'output_json') and args.output_json else None,
             verbose=getattr(args, 'verbose', False),
             log_level=LogLevels.DEBUG if getattr(args, 'verbose', False) else LogLevels.INFO,
+            locale_code=getattr(args, 'locale', 'pt-BR'),
         )
     
     def get_html_file_path(self, file_key: str) -> Path:
         """
-        Get full path to an HTML file.
+        Get full path to an HTML file using i18n locale.
         
         Args:
             file_key: Key in html_files dict (e.g., 'documento', 'metrica')
@@ -91,7 +87,23 @@ class Config:
         Returns:
             Full path to the HTML file
         """
-        filename = self.html_files.get(file_key)
+        from microstrategy_extractor.i18n import get_locale
+        locale = get_locale()
+        
+        file_map = {
+            'documento': locale.html_files.documento,
+            'relatorio': locale.html_files.relatorio,
+            'cubo_inteligente': locale.html_files.cubo_inteligente,
+            'atalho': locale.html_files.atalho,
+            'metrica': locale.html_files.metrica,
+            'fato': locale.html_files.fato,
+            'funcao': locale.html_files.funcao,
+            'atributo': locale.html_files.atributo,
+            'tabela_logica': locale.html_files.tabela_logica,
+            'pasta': locale.html_files.pasta,
+        }
+        
+        filename = file_map.get(file_key)
         if not filename:
             raise ValueError(f"Unknown HTML file key: {file_key}")
         return self.base_path / filename
@@ -112,10 +124,12 @@ class Config:
         elif not self.base_path.is_dir():
             errors.append(f"base_path is not a directory: {self.base_path}")
         
-        # Check if Documento.html exists
+        # Check if main document file exists
+        from microstrategy_extractor.i18n import get_locale
+        locale = get_locale()
         documento_path = self.get_html_file_path('documento')
         if not documento_path.exists():
-            errors.append(f"Documento.html not found in: {self.base_path}")
+            errors.append(f"{locale.html_files.documento} not found in: {self.base_path}")
         
         if self.cache_size_limit < 1:
             errors.append("cache_size_limit must be positive")

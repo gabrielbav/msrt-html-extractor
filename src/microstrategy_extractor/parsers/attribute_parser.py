@@ -9,8 +9,9 @@ from microstrategy_extractor.parsers.base_parser import parse_html_file
 from microstrategy_extractor.parsers.link_resolver import LinkResolver
 from microstrategy_extractor.utils.text_normalizer import TextNormalizer
 from microstrategy_extractor.utils.logger import get_logger
-from microstrategy_extractor.core.constants import HTMLClasses, RegexPatterns, TableHeaders
+from microstrategy_extractor.core.constants import HTMLClasses, RegexPatterns
 from microstrategy_extractor.core.exceptions import ParsingError
+from microstrategy_extractor.i18n import get_locale
 
 logger = get_logger(__name__)
 
@@ -58,8 +59,10 @@ def extract_attribute_forms(soup: BeautifulSoup, object_name: str,
         except ValueError:
             pass
     
-    # Find DETALHES DOS FORMULÁRIOS section
+    # Find attribute form details section (locale-aware)
     section_table = None
+    locale = get_locale()
+    
     if anchor_tag:
         current = anchor_tag.find_next('table', class_=HTMLClasses.SECTIONHEADER)
         attempts = 0
@@ -74,8 +77,12 @@ def extract_attribute_forms(soup: BeautifulSoup, object_name: str,
                 except ValueError:
                     pass
             
-            header_text = current.get_text(strip=True).upper()
-            if 'DETALHES' in header_text and ('FORMULÁRIO' in header_text or 'FORMULARIO' in header_text):
+            header_text = current.get_text(strip=True)
+            # Use locale configuration and normalize for comparison
+            header_text_norm = TextNormalizer.for_comparison(header_text)
+            target_text_norm = TextNormalizer.for_comparison(locale.section_headers.detalhes_formularios)
+            
+            if target_text_norm in header_text_norm:
                 section_table = current
                 break
             current = current.find_next('table', class_=HTMLClasses.SECTIONHEADER)
@@ -180,6 +187,8 @@ def _find_nested_expressions_table(prop_table: BeautifulSoup) -> Optional[Beauti
     Returns:
         Nested table or None
     """
+    locale = get_locale()
+    
     for cell in prop_table.find_all('td'):
         nested = cell.find('table')
         if nested:
@@ -187,7 +196,7 @@ def _find_nested_expressions_table(prop_table: BeautifulSoup) -> Optional[Beauti
             if nested_rows:
                 nested_headers = [th.get_text(strip=True) for th in nested_rows[0].find_all(['td', 'th'])]
                 header_text = ' '.join(nested_headers).upper()
-                if TableHeaders.EXPRESSAO in header_text or TableHeaders.EXPRESSION in header_text:
+                if locale.table_headers.expressao in header_text or locale.table_headers.expression in header_text:
                     return nested
     
     return None
@@ -204,6 +213,7 @@ def _extract_logic_tables_from_form(nested_table: BeautifulSoup) -> List[Dict]:
         List of logic_table dicts
     """
     logic_tables = []
+    locale = get_locale()
     
     nested_rows = nested_table.find_all('tr')
     if not nested_rows:
@@ -219,11 +229,11 @@ def _extract_logic_tables_from_form(nested_table: BeautifulSoup) -> List[Dict]:
     for i, h in enumerate(headers):
         h_norm = TextNormalizer.for_comparison(h)
         # Normalize the constants too for proper comparison
-        expressao_norm = TextNormalizer.for_comparison(TableHeaders.EXPRESSAO)
-        expression_norm = TextNormalizer.for_comparison(TableHeaders.EXPRESSION)
+        expressao_norm = TextNormalizer.for_comparison(locale.table_headers.expressao)
+        expression_norm = TextNormalizer.for_comparison(locale.table_headers.expression)
         if expressao_norm in h_norm or expression_norm in h_norm:
             expr_col = i
-        if TableHeaders.TABELAS_FONTE in h.upper() or (TableHeaders.TABELA in h.upper() and TableHeaders.FONTE in h.upper()):
+        if locale.table_headers.tabelas_fonte in h.upper() or (locale.table_headers.tabela in h.upper() and locale.table_headers.fonte in h.upper()):
             table_col = i
     
     # Extract data rows

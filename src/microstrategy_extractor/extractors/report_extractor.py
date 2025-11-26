@@ -51,7 +51,7 @@ class ReportExtractor(BaseExtractor):
         self.funcao_index_path = self.get_html_file_path('funcao')
         self.atributo_index_path = self.get_html_file_path('atributo')
         self.tabela_logica_index_path = self.get_html_file_path('tabela_logica')
-        self.pasta_index_path = base_path / "Pasta.html"
+        self.pasta_index_path = self.get_html_file_path('pasta')
         
         # Legacy cache dicts (for backward compatibility)
         self._parsed_files = {}
@@ -252,6 +252,28 @@ class ReportExtractor(BaseExtractor):
                         )
                         if metrica:
                             dataset.metricas.append(metrica)
+                    else:
+                        # Handle embedded/derived metrics not in Metric.html index
+                        from microstrategy_extractor.core.models import Metrica
+                        
+                        metric_name = metrica_info['name_on_dataset']
+                        metric_id = metrica_info.get('id', '')
+                        
+                        logger.info(f"Embedded metric detected (not in index): {metric_name} (ID: {metric_id})")
+                        
+                        # Create embedded metric with available information
+                        embedded_metrica = Metrica(
+                            name=metric_name,
+                            id=metric_id,
+                            file_path=metrica_info.get('href', ''),
+                            dataset_id=dataset.id,
+                            tipo='embedded',
+                            applicationObject='DerivedMetric',
+                            formula=None,
+                            function=None,
+                            fact=None
+                        )
+                        dataset.metricas.append(embedded_metrica)
                 
                 relatorio.datasets.append(dataset)
             

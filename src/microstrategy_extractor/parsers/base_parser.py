@@ -313,16 +313,19 @@ def preload_common_files(base_path: Path) -> None:
     Args:
         base_path: Base directory containing HTML files
     """
+    from microstrategy_extractor.i18n import get_locale
+    locale = get_locale()
+    
     common_files = [
-        "Métrica.html",
-        "Atributo.html", 
-        "Fato.html",
-        "Função.html",
-        "TabelaLógica.html",
-        "CuboInteligente.html",
-        "Relatório.html",
-        "Atalho.html",
-        "Documento.html"
+        locale.html_files.metrica,
+        locale.html_files.atributo,
+        locale.html_files.fato,
+        locale.html_files.funcao,
+        locale.html_files.tabela_logica,
+        locale.html_files.cubo_inteligente,
+        locale.html_files.relatorio,
+        locale.html_files.atalho,
+        locale.html_files.documento,
     ]
     
     logger.info(f"Pre-loading {len(common_files)} common index files into memory...")

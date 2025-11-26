@@ -75,18 +75,20 @@ class BaseExtractor:
         if self.config:
             return self.config.get_html_file_path(file_key)
         
-        # Fallback to hardcoded names if no config
-        from microstrategy_extractor.core.constants import HTMLFiles
+        # Fallback to locale-based names if no config
+        from microstrategy_extractor.i18n import get_locale
+        locale = get_locale()
         file_map = {
-            'documento': HTMLFiles.DOCUMENTO,
-            'relatorio': HTMLFiles.RELATORIO,
-            'cubo_inteligente': HTMLFiles.CUBO_INTELIGENTE,
-            'atalho': HTMLFiles.ATALHO,
-            'metrica': HTMLFiles.METRICA,
-            'fato': HTMLFiles.FATO,
-            'funcao': HTMLFiles.FUNCAO,
-            'atributo': HTMLFiles.ATRIBUTO,
-            'tabela_logica': HTMLFiles.TABELA_LOGICA,
+            'documento': locale.html_files.documento,
+            'relatorio': locale.html_files.relatorio,
+            'cubo_inteligente': locale.html_files.cubo_inteligente,
+            'atalho': locale.html_files.atalho,
+            'metrica': locale.html_files.metrica,
+            'fato': locale.html_files.fato,
+            'funcao': locale.html_files.funcao,
+            'atributo': locale.html_files.atributo,
+            'tabela_logica': locale.html_files.tabela_logica,
+            'pasta': locale.html_files.pasta,
         }
         
         filename = file_map.get(file_key)

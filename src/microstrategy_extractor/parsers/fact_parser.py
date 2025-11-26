@@ -9,8 +9,9 @@ from microstrategy_extractor.parsers.base_parser import find_object_section, par
 from microstrategy_extractor.parsers.link_resolver import LinkResolver
 from microstrategy_extractor.utils.text_normalizer import TextNormalizer, normalize_for_comparison
 from microstrategy_extractor.utils.logger import get_logger
-from microstrategy_extractor.core.constants import HTMLClasses, RegexPatterns, TableHeaders
+from microstrategy_extractor.core.constants import HTMLClasses, RegexPatterns
 from microstrategy_extractor.core.exceptions import ParsingError, MissingSectionError
+from microstrategy_extractor.i18n import get_locale
 
 logger = get_logger(__name__)
 
@@ -64,6 +65,7 @@ def _find_data_table(section_table: BeautifulSoup) -> Optional[BeautifulSoup]:
     """
     data_table = None
     current = section_table.find_next('table')
+    locale = get_locale()
     
     # Search for the data table - skip empty tables
     while current:
@@ -82,12 +84,12 @@ def _find_data_table(section_table: BeautifulSoup) -> Optional[BeautifulSoup]:
                 h_norm = TextNormalizer.for_comparison(h)
                 
                 # Check for EXPRESSÃO
-                if TableHeaders.EXPRESSAO.upper() in h or 'EXPRESS' in h_norm:
+                if locale.table_headers.expressao.upper() in h or 'EXPRESS' in h_norm:
                     has_expressao = True
                 
                 # Check for TABELAS FONTE
-                if (TableHeaders.TABELAS_FONTE in h or 
-                    (TableHeaders.TABELA in h and TableHeaders.FONTE in h)):
+                if (locale.table_headers.tabelas_fonte in h or 
+                    (locale.table_headers.tabela in h and locale.table_headers.fonte in h)):
                     has_tabela_fonte = True
             
             if has_expressao and has_tabela_fonte:
@@ -116,6 +118,7 @@ def _extract_table_references(data_table: BeautifulSoup) -> List[Dict[str, str]]
         List of logic_table dicts with name, id, column_name
     """
     logic_tables = []
+    locale = get_locale()
     
     # Extract column indices
     header_row = data_table.find('tr')
@@ -130,11 +133,11 @@ def _extract_table_references(data_table: BeautifulSoup) -> List[Dict[str, str]]
     for i, h in enumerate(headers):
         h_norm = TextNormalizer.for_comparison(h)
         
-        if TableHeaders.EXPRESSAO.upper() in h or 'EXPRESS' in h_norm:
+        if locale.table_headers.expressao.upper() in h or 'EXPRESS' in h_norm:
             expressao_col = i
         
-        if (TableHeaders.TABELAS_FONTE in h.upper() or 
-            (TableHeaders.TABELA in h.upper() and TableHeaders.FONTE in h.upper())):
+        if (locale.table_headers.tabelas_fonte in h.upper() or 
+            (locale.table_headers.tabela in h.upper() and locale.table_headers.fonte in h.upper())):
             table_col = i
     
     if table_col is None:
@@ -297,11 +300,12 @@ def extract_expressions_table(soup: BeautifulSoup, object_name: str,
         return []
     
     expressions = []
+    locale = get_locale()
     
     # Find EXPRESSÕES section
     for header in section.find_all('td', class_=HTMLClasses.SECTIONHEADER):
         header_text = header.get_text()
-        if TableHeaders.EXPRESSOES in header_text or 'EXPRESS' in header_text:
+        if locale.section_headers.expressoes in header_text or 'EXPRESS' in header_text:
             next_table = header.find_next('table')
             if next_table:
                 # Find header row to identify columns
@@ -312,9 +316,9 @@ def extract_expressions_table(soup: BeautifulSoup, object_name: str,
                     table_col = None
                     
                     for i, h in enumerate(headers):
-                        if TableHeaders.EXPRESSAO in h.upper() or TableHeaders.EXPRESSION in h.upper():
+                        if locale.table_headers.expressao in h.upper() or locale.table_headers.expression in h.upper():
                             expr_col = i
-                        if TableHeaders.TABELAS_FONTE in h.upper() or TableHeaders.SOURCE_TABLES in h.upper():
+                        if locale.table_headers.tabelas_fonte in h.upper() or locale.table_headers.source_tables in h.upper():
                             table_col = i
                     
                     # Extract data rows

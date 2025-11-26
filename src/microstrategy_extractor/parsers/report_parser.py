@@ -9,8 +9,9 @@ from microstrategy_extractor.parsers.base_parser import parse_html_file, find_ob
 from microstrategy_extractor.parsers.link_resolver import LinkResolver
 from microstrategy_extractor.utils.text_normalizer import TextNormalizer
 from microstrategy_extractor.utils.logger import get_logger
-from microstrategy_extractor.core.constants import HTMLSections, HTMLComments, HTMLImages, RegexPatterns
+from microstrategy_extractor.core.constants import RegexPatterns
 from microstrategy_extractor.core.exceptions import ParsingError
+from microstrategy_extractor.i18n import get_locale
 
 logger = get_logger(__name__)
 
@@ -148,9 +149,10 @@ def extract_datasets_from_report(soup: BeautifulSoup, object_name: str,
     datasets = []
     
     # Find DOCUMENT DEFINITION section
+    locale = get_locale()
     for td in section.find_all('td'):
         text = td.get_text(strip=True)
-        if HTMLSections.DOCUMENT_DEFINITION in text:
+        if locale.section_headers.document_definition in text:
             # Find the next table with dataset links or text
             next_table = td.find_next('table')
             if next_table:
@@ -322,9 +324,10 @@ def is_report_dataset(soup: BeautifulSoup, anchor: str) -> bool:
         return False
     
     # Look for ViewReport.bmp image in the section
+    locale = get_locale()
     for img in section.find_all('img'):
         src = img.get('src', '')
-        if HTMLImages.VIEW_REPORT in src:
+        if locale.html_images.view_report in src:
             return True
     
     return False
@@ -341,13 +344,15 @@ def extract_graphic_type(soup: BeautifulSoup, anchor: str) -> Optional[str]:
     Returns:
         Graphic type string or None
     """
+    locale = get_locale()
+    
     # Find the anchor tag first
     anchor_tag = soup.find('a', {'name': anchor})
     if not anchor_tag:
         logger.debug(f"Anchor tag not found: {anchor}")
         return None
     
-    logger.debug(f"Searching for {HTMLSections.OPCOES_GRAFICO} after anchor")
+    logger.debug(f"Searching for {locale.section_headers.opcoes_grafico} after anchor")
     
     # Search forward from the anchor for OPÇÕES DO GRÁFICO section
     found_grafic_section = False
@@ -367,13 +372,13 @@ def extract_graphic_type(soup: BeautifulSoup, anchor: str) -> Optional[str]:
             
             # Check for exact section header
             text_norm = TextNormalizer.for_comparison(text)
-            if text == HTMLSections.OPCOES_GRAFICO or text_norm == HTMLSections.OPCOES_GRAFICO_NORM:
-                logger.debug(f"Found {HTMLSections.OPCOES_GRAFICO} section header")
+            if text == locale.section_headers.opcoes_grafico or text_norm == locale.section_headers.opcoes_grafico_norm:
+                logger.debug(f"Found {locale.section_headers.opcoes_grafico} section header")
                 found_grafic_section = True
                 continue
             
             # If we found the graphic section, look for "Tipo de gráfico" in rows
-            if found_grafic_section or HTMLSections.OPCOES_GRAFICO_NORM in text_norm:
+            if found_grafic_section or locale.section_headers.opcoes_grafico_norm in text_norm:
                 parent_row = current.parent
                 if parent_row and parent_row.name == 'tr':
                     cells = parent_row.find_all('td')
@@ -388,7 +393,7 @@ def extract_graphic_type(soup: BeautifulSoup, anchor: str) -> Optional[str]:
                                 logger.debug(f"Found graphic type: {value}")
                                 return value
     
-    logger.debug(f"{HTMLSections.OPCOES_GRAFICO} or 'Tipo de gráfico' not found")
+    logger.debug(f"{locale.section_headers.opcoes_grafico} or 'Tipo de gráfico' not found")
     return None
 
 
@@ -414,16 +419,17 @@ def extract_template_objects_report(soup: BeautifulSoup, anchor: str) -> Tuple[L
     
     atributos = []
     metricas = []
+    locale = get_locale()
     
     # Get the HTML content as string to find comments
     section_html = str(section)
     
     # Find [ROWS] section for attributes
-    if HTMLComments.ROWS_MARKER in section_html:
+    if locale.html_comments.rows_marker in section_html:
         logger.debug("Found [ROWS] section for attributes")
         soup_section = BeautifulSoup(section_html, 'lxml')
         for comment in soup_section.find_all(string=lambda text: isinstance(text, Comment)):
-            if HTMLComments.ROWS_MARKER in str(comment):
+            if locale.html_comments.rows_marker in str(comment):
                 # Get the next TD after this comment
                 next_elem = comment
                 for _ in range(10):
@@ -448,11 +454,11 @@ def extract_template_objects_report(soup: BeautifulSoup, anchor: str) -> Tuple[L
                 break
     
     # Find [COLUMNS] section for metrics
-    if HTMLComments.COLUMNS_MARKER in section_html:
+    if locale.html_comments.columns_marker in section_html:
         logger.debug("Found [COLUMNS] section for metrics")
         soup_section = BeautifulSoup(section_html, 'lxml')
         for comment in soup_section.find_all(string=lambda text: isinstance(text, Comment)):
-            if HTMLComments.COLUMNS_MARKER in str(comment):
+            if locale.html_comments.columns_marker in str(comment):
                 # Get the next TD after this comment
                 next_elem = comment
                 for _ in range(10):
@@ -499,14 +505,15 @@ def extract_owner(soup: BeautifulSoup, pasta_index_path: Path, anchor: Optional[
         if anchor_tag:
             start_element = anchor_tag
     
-    # Find "Proprietário:" field starting from the anchor
+    # Find owner field starting from the anchor (locale-aware)
+    locale = get_locale()
     rows_to_search = start_element.find_all_next('tr', valign="TOP", limit=100) if anchor else soup.find_all('tr', valign="TOP")
     
     for row in rows_to_search:
         cells = row.find_all('td')
         if len(cells) >= 2:
             label_text = cells[0].get_text(strip=True)
-            if 'Proprietário' in label_text or 'Proprietario' in label_text:
+            if locale.table_headers.proprietario in label_text:
                 # Extract owner name from second cell
                 owner_text = cells[1].get_text(strip=True)
                 # Remove image tags and extract just the name
@@ -578,14 +585,15 @@ def extract_access_control(soup: BeautifulSoup, pasta_index_path: Path, anchor: 
         if anchor_tag:
             start_element = anchor_tag
     
-    # Find "Controle de Acesso:" section starting from the anchor
+    # Find access control section starting from the anchor (locale-aware)
+    locale = get_locale()
     rows_to_search = start_element.find_all_next('tr', valign="TOP", limit=100) if anchor else soup.find_all('tr', valign="TOP")
     
     for row in rows_to_search:
         cells = row.find_all('td')
         if len(cells) >= 2:
             label_text = cells[0].get_text(strip=True)
-            if 'Controle de Acesso' in label_text:
+            if locale.table_headers.controle_acesso in label_text:
                 # Found the access control section
                 # Look for nested table with USUÁRIO/OBJETO headers
                 nested_table = cells[1].find('table')

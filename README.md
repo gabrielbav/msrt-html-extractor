@@ -131,6 +131,131 @@ VERBOSE=false
 | `OUTPUT_JSON` | Output JSON file path | `output.json` | Any .json file path |
 | `LOG_LEVEL` | Logging verbosity | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 | `VERBOSE` | Enable detailed logs | `false` | `true`, `false` |
+| `LOCALE` | Locale for HTML parsing | `pt-BR` | `pt-BR`, custom locale code |
+
+#### Internationalization (i18n)
+
+The extractor supports multiple locales for parsing MicroStrategy HTML documentation. This allows you to configure file names, section headers, and table headers for different language exports.
+
+**Available Locales:**
+- `pt-BR` (Portuguese/Brazilian) - Default
+
+**Using a Locale:**
+
+```bash
+# Via environment variable
+export LOCALE=pt-BR
+python mstr-extractor.py
+
+# Via command-line argument
+python mstr-extractor.py --locale pt-BR
+
+# In .env file
+LOCALE=pt-BR
+```
+
+**Creating a Custom Locale:**
+
+If your MicroStrategy exports use different language or custom naming conventions, you can create a custom locale file:
+
+1. Create a new locale file in `src/microstrategy_extractor/i18n/` (e.g., `en_us.py`):
+
+```python
+from .base import Locale, HTMLFileNames, SectionHeaders, TableHeaders, HTMLComments, HTMLImages
+
+EN_US = Locale(
+    code="en-US",
+    name="English (United States)",
+    html_files=HTMLFileNames(
+        documento="Document.html",
+        relatorio="Report.html",
+        cubo_inteligente="IntelligentCube.html",
+        atalho="Shortcut.html",
+        metrica="Metric.html",
+        fato="Fact.html",
+        funcao="Function.html",
+        atributo="Attribute.html",
+        tabela_logica="LogicalTable.html",
+        pasta="Folder.html",
+    ),
+    section_headers=SectionHeaders(
+        document_definition="DOCUMENT DEFINITION",
+        objetos_template="TEMPLATE OBJECTS",
+        definicao="DEFINITION",
+        expressoes="EXPRESSIONS",
+        detalhes_formularios="ATTRIBUTE FORM DETAILS",
+        opcoes_grafico="CHART OPTIONS",
+        definicao_norm="DEFINITION",
+        expressoes_norm="EXPRESSIONS",
+        objetos_template_norm="TEMPLATE OBJECTS",
+        opcoes_grafico_norm="CHART OPTIONS",
+    ),
+    table_headers=TableHeaders(
+        expressao="EXPRESSION",
+        expression="EXPRESSION",
+        tabelas_fonte="SOURCE TABLES",
+        source_tables="SOURCE",
+        tabela="TABLE",
+        fonte="SOURCE",
+        tipo_metrica="Metric Type",
+        tipo_grafico="Chart Type",
+        formula="FORMULA",
+        datasets="Datasets:",
+        linhas="ROWS",
+        colunas="COLUMNS",
+        paginar_por="PAGE BY",
+        objetos_relatorio="REPORT OBJECTS",
+        metodo_mapeamento="MAPPING METHOD",
+        proprietario="Owner",
+        controle_acesso="Access Control",
+    ),
+    html_comments=HTMLComments(
+        object_prefix="[OBJECT:",
+        rows_marker="[ROWS]",
+        columns_marker="[COLUMNS]",
+        embedded_metric="EMBEDDED METRIC",
+    ),
+    html_images=HTMLImages(
+        view_report="ViewReport",
+        metric="Metric",
+        function="Function",
+        fact="Fact",
+    ),
+)
+```
+
+2. Register the locale in `src/microstrategy_extractor/i18n/__init__.py`:
+
+```python
+from .en_us import EN_US
+
+_LOCALE_REGISTRY: Dict[str, Locale] = {
+    "pt-BR": PT_BR,
+    "en-US": EN_US,  # Add your locale
+    # ... other locales
+}
+```
+
+3. Use your custom locale:
+
+```bash
+python mstr-extractor.py --locale en-US
+```
+
+**Programmatic Locale Usage:**
+
+You can also set locales programmatically in your Python code:
+
+```python
+from microstrategy_extractor.i18n import set_locale_by_code, get_locale
+
+# Set locale
+set_locale_by_code("pt-BR")
+
+# Get current locale
+locale = get_locale()
+print(locale.html_files.documento)  # Output: "Documento.html"
+```
 
 #### Running the Extractor
 
@@ -214,13 +339,18 @@ microstrategy-extractor/
 ├── src/
 │   └── microstrategy_extractor/          # Main package
 │       ├── core/                          # Core models, types, exceptions, constants
-│       │   ├── constants.py               # Constants and enums
+│       │   ├── constants.py               # Constants and enums (DEPRECATED)
 │       │   ├── exceptions.py              # Custom exceptions
 │       │   ├── models.py                  # Data models (dataclasses)
 │       │   └── types.py                   # Type definitions
 │       │
 │       ├── config/                        # Configuration management
 │       │   └── settings.py                # Config class (env, CLI, code)
+│       │
+│       ├── i18n/                          # Internationalization
+│       │   ├── __init__.py                # Locale manager
+│       │   ├── base.py                    # Base locale structure
+│       │   └── pt_br.py                   # Portuguese (Brazil) locale
 │       │
 │       ├── cache/                         # Caching system
 │       │   ├── cache_manager.py           # Abstract cache interface

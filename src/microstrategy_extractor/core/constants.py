@@ -1,4 +1,9 @@
-"""Constants module - centralized string literals and configuration values."""
+"""Constants module - centralized string literals and configuration values.
+
+DEPRECATED: Most constants are now loaded from locale configuration.
+Use microstrategy_extractor.i18n.get_locale() for locale-specific values.
+This module is kept for backward compatibility.
+"""
 
 
 class HTMLSections:
@@ -47,7 +52,10 @@ class MetricTypes:
 
 
 class HTMLFiles:
-    """Standard HTML file names in MicroStrategy documentation."""
+    """Standard HTML file names in MicroStrategy documentation.
+    
+    DEPRECATED: Use get_locale().html_files instead.
+    """
     DOCUMENTO = "Documento.html"
     RELATORIO = "Relatório.html"
     CUBO_INTELIGENTE = "CuboInteligente.html"
@@ -57,6 +65,7 @@ class HTMLFiles:
     FUNCAO = "Função.html"
     ATRIBUTO = "Atributo.html"
     TABELA_LOGICA = "TabelaLógica.html"
+    PASTA = "Pasta.html"
 
 
 class HTMLComments:

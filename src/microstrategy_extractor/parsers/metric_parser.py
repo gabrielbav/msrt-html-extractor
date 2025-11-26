@@ -9,8 +9,9 @@ from microstrategy_extractor.parsers.base_parser import find_object_section, par
 from microstrategy_extractor.parsers.link_resolver import LinkResolver
 from microstrategy_extractor.utils.text_normalizer import TextNormalizer, normalize_for_comparison
 from microstrategy_extractor.utils.logger import get_logger
-from microstrategy_extractor.core.constants import HTMLSections, HTMLClasses, RegexPatterns, HTMLImages, TableHeaders
+from microstrategy_extractor.core.constants import HTMLClasses, RegexPatterns
 from microstrategy_extractor.core.exceptions import ParsingError
+from microstrategy_extractor.i18n import get_locale
 
 logger = get_logger(__name__)
 
@@ -45,13 +46,15 @@ def _find_definition_section(soup: BeautifulSoup, object_name: str,
             anchor_tag = soup.find('a', {'name': anchor})
         logger.debug(f"Anchor tag found: {anchor_tag is not None}")
     
+    locale = get_locale()
+    
     # Find all DEFINIÇÃO sections
     def_sections = []
     for table in search_area.find_all('table', class_=HTMLClasses.SECTIONHEADER):
         header_text = table.get_text(strip=True)
         # Normalize for comparison (remove accents)
         header_text_norm = normalize_for_comparison(header_text)
-        if HTMLSections.DEFINICAO_NORM in header_text_norm:
+        if locale.section_headers.definicao_norm in header_text_norm:
             def_sections.append(table)
             logger.debug(f"Found DEFINIÇÃO section in search_area: {header_text[:50]}")
     
@@ -62,7 +65,7 @@ def _find_definition_section(soup: BeautifulSoup, object_name: str,
             header_text = table.get_text(strip=True)
             # Normalize for comparison (remove accents)
             header_text_norm = normalize_for_comparison(header_text)
-            if HTMLSections.DEFINICAO_NORM in header_text_norm:
+            if locale.section_headers.definicao_norm in header_text_norm:
                 def_sections.append(table)
                 logger.debug(f"Found DEFINIÇÃO section in full soup: {header_text[:50]}")
     
@@ -81,7 +84,7 @@ def _find_definition_section(soup: BeautifulSoup, object_name: str,
                     if current and current.name == 'table' and HTMLClasses.SECTIONHEADER in str(current.get('class', [])):
                         header_text = current.get_text(strip=True)
                         header_text_norm = normalize_for_comparison(header_text)
-                        if HTMLSections.DEFINICAO_NORM in header_text_norm:
+                        if locale.section_headers.definicao_norm in header_text_norm:
                             logger.debug(f"Returning DEFINIÇÃO after anchor")
                             return current
                 break
@@ -150,6 +153,7 @@ def _extract_formula_components(target_section: BeautifulSoup) -> Tuple[Optional
     formula = None
     function_id = None
     fact_id = None
+    locale = get_locale()
     
     current = target_section.find_next('table')
     while current:
@@ -162,7 +166,7 @@ def _extract_formula_components(target_section: BeautifulSoup) -> Tuple[Optional
                     label_upper = label.upper()
                     
                     # Look for Fórmula
-                    if TableHeaders.FORMULA in label_upper or 'FORMULA' in label_upper:
+                    if locale.table_headers.formula in label_upper or 'FORMULA' in label_upper:
                         formula_cell = cells[1]
                         
                         # Extract formula text carefully
@@ -246,6 +250,7 @@ def _extract_child_metric_ids(target_section: BeautifulSoup, anchor: Optional[st
         List of child metric IDs
     """
     child_metric_ids = []
+    locale = get_locale()
     
     # Look for child metrics ONLY in the formula section
     formula_processed = False
@@ -258,7 +263,7 @@ def _extract_child_metric_ids(target_section: BeautifulSoup, anchor: Optional[st
                 cells = row.find_all(['td', 'th'])
                 if len(cells) >= 2:
                     label = cells[0].get_text(strip=True)
-                    if TableHeaders.FORMULA in label.upper() or 'FORMULA' in label.upper():
+                    if locale.table_headers.formula in label.upper() or 'FORMULA' in label.upper():
                         formula_cell = cells[1]
                         
                         # Look for links with Metric.bmp
@@ -277,7 +282,7 @@ def _extract_child_metric_ids(target_section: BeautifulSoup, anchor: Optional[st
                                 # Check if this is a metric link
                                 if prev_img:
                                     img_src = prev_img.get('src', '').lower()
-                                    if HTMLImages.METRIC.lower() in img_src:
+                                    if locale.html_images.metric.lower() in img_src:
                                         match = re.search(RegexPatterns.ID_PLACEHOLDER, href)
                                         if match:
                                             metric_id = match.group(1)
@@ -369,9 +374,11 @@ def _find_template_table(section: BeautifulSoup) -> Optional[BeautifulSoup]:
     Returns:
         Template table or None
     """
+    locale = get_locale()
+    
     for td in section.find_all('td'):
         text = td.get_text(strip=True)
-        if TableHeaders.OBJETOS_RELATORIO in text or 'OBJETOS DE TEMPLATE' in text:
+        if locale.table_headers.objetos_relatorio in text or 'OBJETOS DE TEMPLATE' in text:
             logger.debug(f"Found 'OBJETOS DE TEMPLATE' text in td")
             
             # Look for a table that has the 4 headers
@@ -385,8 +392,8 @@ def _find_template_table(section: BeautifulSoup) -> Optional[BeautifulSoup]:
                         header_text_upper = ' '.join(headers[:10]).upper()
                         
                         has_objetos = 'OBJETOS DO RELAT' in header_text_upper or 'OBJETOS DO RELATORIO' in header_text_upper
-                        has_linhas = TableHeaders.LINHAS in header_text_upper
-                        has_colunas = TableHeaders.COLUNAS in header_text_upper
+                        has_linhas = locale.table_headers.linhas in header_text_upper
+                        has_colunas = locale.table_headers.colunas in header_text_upper
                         
                         if has_objetos and has_linhas and has_colunas:
                             logger.debug(f"Table {table_idx} has expected headers")

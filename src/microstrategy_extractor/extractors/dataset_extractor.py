@@ -32,7 +32,7 @@ class DatasetExtractor(BaseExtractor):
         dataset_name = ds_info['name']
         dataset_id = ds_info.get('id', '')
         
-        logger.info(f"Extracting dataset: {dataset_name}")
+        logger.debug(f"Extracting dataset: {dataset_name}")
         
         # Resolve dataset file path
         dataset_result = self._resolve_dataset(dataset_id, dataset_name)
@@ -46,12 +46,12 @@ class DatasetExtractor(BaseExtractor):
         # Extract ID from file path if not available
         if not dataset_id and '#' in dataset_file:
             dataset_id = dataset_file.split('#')[1]
-            logger.info(f"Extracted dataset ID from file path: {dataset_id}")
+            logger.debug(f"Extracted dataset ID from file path: {dataset_id}")
         
         # Generate GUID if still no ID
         if not dataset_id:
             dataset_id = str(uuid.uuid4()).replace('-', '').upper()
-            logger.info(f"Generated GUID for dataset without ID: {dataset_id}")
+            logger.debug(f"Generated GUID for dataset without ID: {dataset_id}")
         
         # Handle Shortcut type
         if dataset_source == ApplicationObjects.SHORTCUT:
@@ -75,7 +75,7 @@ class DatasetExtractor(BaseExtractor):
         is_report = is_report_dataset(soup, dataset_id)
         
         if is_report:
-            logger.info(f"Dataset is a Report type")
+            logger.debug(f"Dataset is a Report type")
             application_object = ApplicationObjects.REPORT
             graphic_type = extract_graphic_type(soup, dataset_id)
             atributos_info, metricas_info = extract_template_objects_report(soup, dataset_id)
@@ -93,7 +93,7 @@ class DatasetExtractor(BaseExtractor):
             graphic=graphic_type
         )
         
-        logger.info(f"Found {len(atributos_info)} attributes and {len(metricas_info)} metrics")
+        logger.debug(f"Found {len(atributos_info)} attributes and {len(metricas_info)} metrics")
         
         return dataset, atributos_info, metricas_info
     
@@ -131,7 +131,7 @@ class DatasetExtractor(BaseExtractor):
         # Generate GUID if no ID
         if not dataset_id:
             dataset_id = str(uuid.uuid4()).replace('-', '').upper()
-            logger.info(f"Generated GUID for dataset without ID: {dataset_id}")
+            logger.debug(f"Generated GUID for dataset without ID: {dataset_id}")
         
         return DataSet(
             name=dataset_name,

@@ -328,18 +328,18 @@ def preload_common_files(base_path: Path) -> None:
         locale.html_files.documento,
     ]
     
-    logger.info(f"Pre-loading {len(common_files)} common index files into memory...")
+    logger.debug(f"Pre-loading {len(common_files)} common index files into memory...")
     loaded_count = 0
     for filename in common_files:
         file_path = base_path / filename
         if file_path.exists():
             parse_html_file(file_path)
             loaded_count += 1
-            logger.info(f"  ✓ Cached {filename}")
+            logger.debug(f"  ✓ Cached {filename}")
         else:
             logger.debug(f"  ✗ Skipped {filename} (not found)")
     
-    logger.info(f"Pre-loaded {loaded_count}/{len(common_files)} files into global cache")
+    logger.debug(f"Pre-loaded {loaded_count}/{len(common_files)} files into global cache")
 
 
 def preload_all_html_files(base_path: Path, max_files: int = None) -> None:

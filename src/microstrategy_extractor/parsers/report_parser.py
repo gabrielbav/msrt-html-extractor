@@ -538,7 +538,7 @@ def extract_owner(soup: BeautifulSoup, pasta_index_path: Path, anchor: Optional[
                                 'decision': None
                             }
                         else:
-                            logger.warning(f"Owner not found in Pasta.html: {owner_name}")
+                            logger.warning(f"Owner not found in {pasta_index_path.name}: {owner_name}")
                             # Return with just the name
                             return {
                                 'name': owner_name,
@@ -655,7 +655,7 @@ def extract_access_control(soup: BeautifulSoup, pasta_index_path: Path, anchor: 
                                             'file_path': file_path
                                         })
                                     else:
-                                        logger.warning(f"User/group not found in Pasta.html: {user_name}")
+                                        logger.warning(f"User/group not found in {pasta_index_path.name}: {user_name}")
                                         # Add entry with limited info
                                         access_entries.append({
                                             'name': user_name,

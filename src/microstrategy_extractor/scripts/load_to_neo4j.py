@@ -92,14 +92,66 @@ class Neo4jDataLoader:
         
         try:
             self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
-            # Test connection
+            
+            # Check if database exists and create if needed
+            try:
+                with self.driver.session(database="system") as session:
+                    # Check if database exists
+                    result = session.run("SHOW DATABASES")
+                    databases = [record["name"] for record in result]
+                    
+                    if self.database not in databases:
+                        print(f"ℹ️  Database '{self.database}' does not exist. Creating...")
+                        try:
+                            # Try simple CREATE DATABASE first
+                            session.run(f"CREATE DATABASE `{self.database}`")
+                            print(f"✓ Database '{self.database}' created successfully")
+                            # Wait a moment for database to be ready
+                            import time
+                            time.sleep(2)
+                        except Exception as create_error:
+                            # Handle case where it's Community Edition or other restrictions
+                            error_msg = str(create_error)
+                            if "Unsupported administration command" in error_msg or "UnsupportedAdministrationCommand" in error_msg:
+                                print(f"⚠️  Cannot create database '{self.database}': Neo4j Community Edition detected")
+                                print(f"   Community Edition only supports a single database.")
+                                # Check if 'neo4j' database exists and offer to use it
+                                if "neo4j" in databases:
+                                    print(f"   The default 'neo4j' database is available.")
+                                    print(f"   To use it, restart with: --database neo4j")
+                                    print(f"   Or set NEO4J_DATABASE=neo4j in your .env file")
+                                else:
+                                    print(f"   Please restart with the correct database name that exists in your Neo4j instance.")
+                                return False
+                            elif "already exists" in error_msg.lower():
+                                # Database was created between check and create
+                                print(f"✓ Database '{self.database}' already exists")
+                            else:
+                                print(f"✗ Failed to create database: {create_error}")
+                                return False
+            except Exception as check_error:
+                # If SHOW DATABASES fails, might be permission issue or older Neo4j version
+                error_msg = str(check_error)
+                if "Unsupported administration command" in error_msg or "UnsupportedAdministrationCommand" in error_msg:
+                    print(f"⚠️  This Neo4j instance does not support database management commands (Community Edition)")
+                    print(f"   Attempting to connect to '{self.database}' database...")
+                else:
+                    print(f"⚠️  Could not check databases (may need admin privileges): {check_error}")
+                    print(f"   Attempting to connect to '{self.database}' anyway...")
+            
+            # Test connection to target database
             with self.driver.session(database=self.database) as session:
                 result = session.run("RETURN 1 as test")
                 result.single()
-            print(f"✓ Connected to Neo4j at {self.uri}")
+            print(f"✓ Connected to Neo4j at {self.uri} (database: {self.database})")
             return True
         except Exception as e:
-            print(f"✗ Failed to connect to Neo4j: {e}")
+            error_msg = str(e)
+            if "DatabaseNotFound" in error_msg or "Database does not exist" in error_msg:
+                print(f"✗ Failed to connect: Database '{self.database}' does not exist and could not be created automatically")
+                print(f"   Please create the database manually or use the default 'neo4j' database")
+            else:
+                print(f"✗ Failed to connect to Neo4j: {e}")
             return False
     
     def close(self):

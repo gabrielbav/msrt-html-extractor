@@ -3,7 +3,8 @@
 Neo4j Database Reset Script
 
 This script completely wipes the Neo4j database, removing all nodes, relationships,
-constraints, and indexes. Use with caution!
+constraints, and indexes. Optionally, it can also drop the database entirely from Neo4j.
+Use with caution!
 
 Usage:
     # Interactive mode (safest - requires confirmation)
@@ -14,6 +15,9 @@ Usage:
     
     # Force reset without confirmation
     python -m microstrategy_extractor.scripts.reset_neo4j --force
+    
+    # Drop the database completely (Enterprise Edition only)
+    python -m microstrategy_extractor.scripts.reset_neo4j --drop-db
     
     # Custom connection
     python -m microstrategy_extractor.scripts.reset_neo4j --uri bolt://localhost:7687 --user neo4j --password mypass
@@ -50,7 +54,8 @@ class Neo4jDatabaseResetter:
         password: str,
         database: str = "neo4j",
         dry_run: bool = False,
-        force: bool = False
+        force: bool = False,
+        drop_db: bool = False
     ):
         """
         Initialize the database resetter.
@@ -62,6 +67,7 @@ class Neo4jDatabaseResetter:
             database: Database name (default: neo4j)
             dry_run: If True, show what would be deleted without executing
             force: If True, skip interactive confirmation
+            drop_db: If True, drop the database completely after clearing it
         """
         self.uri = uri
         self.user = user
@@ -69,6 +75,7 @@ class Neo4jDatabaseResetter:
         self.database = database
         self.dry_run = dry_run
         self.force = force
+        self.drop_db = drop_db
         self.driver: Optional[Driver] = None
         
         # Statistics
@@ -209,7 +216,12 @@ class Neo4jDatabaseResetter:
             return True
         
         print("\n" + "=" * 70)
-        print("⚠️  WARNING: This will PERMANENTLY DELETE all data, constraints, and indexes!")
+        if self.drop_db:
+            print("⚠️  WARNING: This will PERMANENTLY DELETE the database from Neo4j!")
+            print("    - All data, constraints, and indexes will be deleted")
+            print("    - The database itself will be dropped and no longer exist")
+        else:
+            print("⚠️  WARNING: This will PERMANENTLY DELETE all data, constraints, and indexes!")
         print("=" * 70)
         print()
         
@@ -393,6 +405,58 @@ class Neo4jDatabaseResetter:
             print(f"  ✗ Error verifying database: {e}")
             return False
     
+    def drop_database(self) -> bool:
+        """
+        Drop the database completely from Neo4j.
+        
+        Returns:
+            bool: True if successful
+        """
+        print(f"\n💣 Dropping database '{self.database}' from Neo4j...")
+        
+        if self.dry_run:
+            print(f"  [DRY RUN] Would execute: DROP DATABASE `{self.database}`")
+            return True
+        
+        try:
+            # Need to connect to system database to drop another database
+            with self.driver.session(database="system") as session:
+                # Check if database exists first
+                result = session.run("SHOW DATABASES")
+                databases = [record["name"] for record in result]
+                
+                if self.database not in databases:
+                    print(f"  ℹ️  Database '{self.database}' does not exist (already dropped or never created)")
+                    return True
+                
+                # Try to drop the database
+                try:
+                    session.run(f"DROP DATABASE `{self.database}`")
+                    print(f"  ✓ Successfully dropped database '{self.database}'")
+                    return True
+                except Exception as drop_error:
+                    error_msg = str(drop_error)
+                    if "Unsupported administration command" in error_msg or "UnsupportedAdministrationCommand" in error_msg:
+                        print(f"  ⚠️  Cannot drop database: Neo4j Community Edition does not support dropping databases")
+                        print(f"     The database has been cleared but still exists")
+                        return False
+                    elif "default database" in error_msg.lower() or "cannot drop the default database" in error_msg.lower():
+                        print(f"  ⚠️  Cannot drop default database '{self.database}'")
+                        print(f"     The database has been cleared but cannot be dropped")
+                        return False
+                    else:
+                        print(f"  ✗ Failed to drop database: {drop_error}")
+                        return False
+        except Exception as e:
+            error_msg = str(e)
+            if "Unsupported administration command" in error_msg or "UnsupportedAdministrationCommand" in error_msg:
+                print(f"  ⚠️  Cannot drop database: Neo4j Community Edition does not support multiple databases")
+                print(f"     The database has been cleared but cannot be dropped")
+                return False
+            else:
+                print(f"  ✗ Error dropping database: {e}")
+                return False
+    
     def reset(self) -> bool:
         """
         Execute the complete database reset.
@@ -412,6 +476,10 @@ class Neo4jDatabaseResetter:
             print("Mode: FORCE (no confirmation required)")
         else:
             print("Mode: INTERACTIVE (confirmation required)")
+        if self.drop_db:
+            print("Action: CLEAR DATA + DROP DATABASE")
+        else:
+            print("Action: CLEAR DATA ONLY (keep database)")
         print("=" * 70)
         
         # Connect to database
@@ -451,12 +519,21 @@ class Neo4jDatabaseResetter:
             if not self.dry_run:
                 self.verify_database_empty()
             
+            # Drop database if requested
+            if self.drop_db:
+                drop_success = self.drop_database()
+                if not drop_success and not self.dry_run:
+                    print("\n⚠️  Warning: Database was cleared but could not be dropped")
+            
             # Success message
             print("\n" + "=" * 70)
             if self.dry_run:
                 print("✓ Dry run complete - no changes were made")
             else:
-                print("✓ Database reset complete!")
+                if self.drop_db:
+                    print("✓ Database reset and drop complete!")
+                else:
+                    print("✓ Database reset complete!")
             print("=" * 70)
             
             return True
@@ -523,6 +600,11 @@ def main():
         action="store_true",
         help="Skip interactive confirmation (use with caution!)"
     )
+    parser.add_argument(
+        "--drop-db",
+        action="store_true",
+        help="Drop the database completely from Neo4j (Enterprise Edition only)"
+    )
     
     args = parser.parse_args()
     
@@ -551,7 +633,8 @@ def main():
         password=config["password"],
         database=config["database"],
         dry_run=args.dry_run,
-        force=args.force
+        force=args.force,
+        drop_db=args.drop_db
     )
     
     success = resetter.reset()

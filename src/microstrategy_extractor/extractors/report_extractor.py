@@ -68,7 +68,7 @@ class ReportExtractor(BaseExtractor):
         Returns:
             List of Relatorio objects
         """
-        logger.info(f"Extracting report(s): {report_name}")
+        logger.debug(f"Extracting report(s): {report_name}")
         
         # Find reports
         reports_info = find_report_by_name(self.documento_path, report_name)
@@ -96,7 +96,7 @@ class ReportExtractor(BaseExtractor):
         Returns:
             Relatorio object or None
         """
-        logger.info(f"Extracting report by ID: {report_id}")
+        logger.debug(f"Extracting report by ID: {report_id}")
         
         report_info = find_report_by_id(self.documento_path, report_id)
         if not report_info:
@@ -128,30 +128,31 @@ class ReportExtractor(BaseExtractor):
         # Filter reports if filter_names provided
         if filter_names:
             reports_info = [r for r in reports_info if r['name'] in filter_names]
-            logger.info(f"Filtered to {len(reports_info)} reports matching filter")
+            logger.debug(f"Filtered to {len(reports_info)} reports matching filter")
         
         relatorios = []
         
-        logger.info(f"Found {len(reports_info)} reports to process")
+        print(f"Found {len(reports_info)} reports to process")
         
         for i, report_info in enumerate(reports_info, 1):
             try:
-                logger.info(f"Processing report {i}/{len(reports_info)}: {report_info['name']}")
-                relatorio = self._extract_single_report(report_info)
+                # Compact progress display (always visible)
+                print(f"Processing report {i}/{len(reports_info)}: {report_info['name']}")
+                relatorio = self._extract_single_report(report_info, show_progress=True)
                 if relatorio:
                     relatorios.append(relatorio)
             except Exception as e:
                 logger.error(f"Error extracting report '{report_info['name']}': {e}")
                 continue
         
-        # Log cache stats
+        # Log cache stats at debug level
         cache_stats = get_cache_stats()
-        logger.info(f"Cache statistics: {cache_stats['hits']} hits, {cache_stats['misses']} misses, "
+        logger.debug(f"Cache statistics: {cache_stats['hits']} hits, {cache_stats['misses']} misses, "
                    f"{cache_stats['hit_rate']}% hit rate")
         
         return relatorios
     
-    def _extract_single_report(self, report_info: Dict) -> Optional[Relatorio]:
+    def _extract_single_report(self, report_info: Dict, show_progress: bool = False) -> Optional[Relatorio]:
         """Extract a single report."""
         report_id = report_info.get('anchor', '')
         if not report_id:
@@ -165,7 +166,7 @@ class ReportExtractor(BaseExtractor):
         
         file_path_with_anchor = f"{report_info['file']}#{report_id}"
         
-        logger.info(f"Extracting report ID: {report_id}")
+        logger.debug(f"Extracting report ID: {report_id}")
         
         relatorio = Relatorio(
             name=report_info['name'],
@@ -206,7 +207,12 @@ class ReportExtractor(BaseExtractor):
         anchor = report_info.get('anchor', '').split('#')[-1] if '#' in report_info.get('anchor', '') else report_info.get('anchor', '')
         datasets_info = extract_datasets_from_report(soup, report_info['name'], anchor)
         
-        logger.info(f"Found {len(datasets_info)} datasets")
+        logger.debug(f"Found {len(datasets_info)} datasets")
+        
+        # Track progress counters
+        total_datasets = len(datasets_info)
+        total_attributes = 0
+        total_metrics = 0
         
         # Extract each dataset
         for ds_info in datasets_info:
@@ -232,6 +238,7 @@ class ReportExtractor(BaseExtractor):
                         )
                         if atributo:
                             dataset.atributos.append(atributo)
+                            total_attributes += 1
                 
                 # Extract metrics
                 for metrica_info in metricas_info:
@@ -252,6 +259,7 @@ class ReportExtractor(BaseExtractor):
                         )
                         if metrica:
                             dataset.metricas.append(metrica)
+                            total_metrics += 1
                     else:
                         # Handle embedded/derived metrics not in Metric.html index
                         from microstrategy_extractor.core.models import Metrica
@@ -259,7 +267,7 @@ class ReportExtractor(BaseExtractor):
                         metric_name = metrica_info['name_on_dataset']
                         metric_id = metrica_info.get('id', '')
                         
-                        logger.info(f"Embedded metric detected (not in index): {metric_name} (ID: {metric_id})")
+                        logger.debug(f"Embedded metric detected (not in index): {metric_name} (ID: {metric_id})")
                         
                         # Create embedded metric with available information
                         embedded_metrica = Metrica(
@@ -274,12 +282,17 @@ class ReportExtractor(BaseExtractor):
                             fact=None
                         )
                         dataset.metricas.append(embedded_metrica)
+                        total_metrics += 1
                 
                 relatorio.datasets.append(dataset)
             
             elif dataset_result:
                 # Old format: just dataset
                 relatorio.datasets.append(dataset_result)
+        
+        # Show compact progress if requested (always visible)
+        if show_progress:
+            print(f"  └─ Extracted {total_datasets} Datasets | {total_attributes} Attributes | {total_metrics} Metrics")
         
         return relatorio
     
